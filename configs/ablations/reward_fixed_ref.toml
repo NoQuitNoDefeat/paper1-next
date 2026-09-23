@@ -1,0 +1,13 @@
+# 奖励对照（方案 B）：终止违约除以固定参考量 300 包，而不是除以当期风险包数。
+# 改变了违约项的含义，只作为明确标记的对照；主方案仍是 standard（方案 A）。
+extends = "../imitation_lq.toml"
+name = "ctl-reward-fixed-ref"
+
+[reward]
+type = "fixed_violation_ref"
+alpha = 1.0
+beta = 0.5
+eta = 0.5
+lambda_viol = 5.0
+hol_ref_s = 0.2
+violation_ref_packets = 300.0

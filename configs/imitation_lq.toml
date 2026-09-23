@@ -11,6 +11,21 @@ eta = 0.5
 lambda_viol = 5.0
 hol_ref_s = 0.2
 
+[trainer]
+type = "ppo"
+clip = 0.2
+epochs = 4
+minibatch_cycles = 256
+ent_coef = 0.003                # small bonus: do not push away from the imitation start
+vf_coef = 0.5
+max_grad_norm = 0.5
+
+[training]
+lr = 1e-4                       # fine-tuning rate (chosen on dev in E4)
+eval_every = 25
+checkpoint_every = 25
+keep_every = 25                 # every kept checkpoint is a selection candidate
+
 [imitation]
 teacher = "longest_queue"
 cycles = 500          # per training environment (8 × 500 teacher cycles)

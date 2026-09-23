@@ -25,8 +25,10 @@ from .assemble import build_model, build_policy, code_version, feature_schema
 from .evaluate import evaluate, paired
 from .train import TrainingRun
 
-PAIRED_KEYS = ("delivery_ratio", "termination_ratio", "e2e_delay_mean_s", "reward_mean")
-KEYS = ("delivery_ratio", "e2e_delay_mean_s", "e2e_delay_p95_s", "throughput_bps",
+PAIRED_KEYS = ("delivery_ratio", "termination_ratio", "e2e_delay_mean_s", "e2e_delay_p95_s",
+               "ontime_1s", "ontime_2s")
+KEYS = ("delivery_ratio", "ontime_1s", "ontime_2s", "e2e_delay_mean_s", "e2e_delay_p95_s",
+        "throughput_bps",
         "queue_backlog_mean", "waiting_backlog_mean", "termination_ratio", "plan_size_mean",
         "exec_failed_link_frac", "sinr_violation_cycle_frac", "reward_mean", "decision_ms_mean")
 
@@ -70,7 +72,8 @@ def _cmd_eval(args) -> None:
         else:
             policy = build_policy(cfg, name)
         res = evaluate(cfg, policy, split=args.split, episodes=args.episodes, mode=args.mode,
-                       num_envs=args.num_envs, drain_cycles=args.drain)
+                       num_envs=args.num_envs, drain_cycles=args.drain,
+                       seed_offset=args.seed_offset)
         table[name] = res
         m = res["mean"]
         print(f"{name:>16}: " + "  ".join(f"{k.replace('_mean', '')}={m[k]:.4g}" for k in KEYS if k in m),
@@ -120,7 +123,16 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--drain", type=int, default=0,
                    help="stop traffic at the horizon and run this many extra cycles")
     e.add_argument("--reference", help="policy for paired differences (default: first baseline)")
+    e.add_argument("--seed-offset", type=int, default=0,
+                   help="skip the first N seeds of the split (e.g. those used for selection)")
     e.add_argument("--out")
+    sel = sub.add_parser("select", help="pick a checkpoint by the fixed reliability-first rule")
+    sel.add_argument("--run-dir", required=True)
+    sel.add_argument("--reference", default="longest_queue")
+    sel.add_argument("--episodes", type=int, default=16)
+    sel.add_argument("--drain", type=int, default=250)
+    sel.add_argument("--delta", type=float, default=0.002)
+    sel.add_argument("--num-envs", type=int, default=8)
     sub.add_parser("components")
     args = p.parse_args(argv)
     torch.set_num_threads(4)
@@ -128,6 +140,10 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_train(args)
     elif args.cmd == "resume":
         _cmd_resume(args)
+    elif args.cmd == "select":
+        from .select import select_checkpoint
+        select_checkpoint(args.run_dir, reference=args.reference, episodes=args.episodes,
+                          drain=args.drain, delta=args.delta, num_envs=args.num_envs)
     elif args.cmd == "eval":
         if not (args.config or args.run_dir):
             raise SystemExit("eval needs --config or --run-dir")

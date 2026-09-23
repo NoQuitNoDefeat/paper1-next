@@ -161,3 +161,34 @@ def test_failed_transmission_keeps_packet_and_is_not_a_termination():
     tr = env.step([links.index((0, 1)), links.index((2, 3))])
     assert set(tr.facts.failed) == {(0, 1), (2, 3)} and tr.facts.served_packets.sum() == 0
     assert tr.facts.terminations == {} and tr.facts.queued_end == 2
+
+
+def test_violation_normalisation_primary_vs_fixed_reference_control():
+    from fanet_next.reward.standard import REWARD
+
+    pos = [[0, 0, 100], [100, 0, 100], [2000, 0, 100]]
+    env = fixed_env(pos, [(0.005, 0, 2), (0.006, 0, 2), (0.007, 0, 1)], horizon=6,
+                    waiting_max_wait=0.06)
+    env.reset(0)
+    for _ in range(4):
+        tr = env.step([] if not env.current.problem.num_candidates else [0])
+    facts = tr.facts
+    assert len(facts.terminations["waiting_timeout"]) == 2
+    primary = REWARD.build({"type": "standard"})(facts).parts["violation"]
+    control = REWARD.build({"type": "fixed_violation_ref", "violation_ref_packets": 10})(facts)
+    assert primary == pytest.approx(2 / facts.risk_packets)
+    assert control.parts["violation"] == pytest.approx(2 / 10)
+
+
+def test_ontime_ratio_counts_drops_as_late():
+    from fanet_next.reward.metrics import MetricsAccumulator
+
+    env = fixed_env(line_positions(2), [(0.005, 0, 1), (0.006, 0, 1), (0.007, 0, 1)], horizon=3,
+                    queue_capacity=2)
+    env.reset(0)
+    for _ in range(3):
+        env.step(list(range(env.current.problem.num_candidates))[:1])
+    s = env.metrics.summary()
+    assert s["born"] == 3 and s["delivered"] == 2 and s["term_queue_overflow"] == 1
+    assert s["ontime_1s"] == pytest.approx(2 / 3)  # the dropped packet is never on time
+    assert isinstance(MetricsAccumulator().summary()["ontime_2s"], float)

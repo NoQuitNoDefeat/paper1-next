@@ -15,6 +15,9 @@ from ..contracts import CycleFacts
 from .standard import RewardBreakdown
 
 
+ONTIME_DEADLINES_S = (0.5, 1.0, 2.0)
+
+
 class MetricsAccumulator:
     def __init__(self) -> None:
         self.cycles = 0
@@ -95,6 +98,10 @@ class MetricsAccumulator:
             "rehomed": self.rehomed,
             "relay_terminated_frac": self.relay_terminated / max(terminated, 1),
         }
+        # share of *all* born packets delivered within D: drops and stragglers count as late,
+        # so a lower delay among survivors cannot hide more drops
+        for dl in ONTIME_DEADLINES_S:
+            out[f"ontime_{dl:g}s"] = float((d <= dl).sum()) / max(self.born, 1)
         for k, v in self.reward_parts.items():
             out[f"reward_{k}_mean"] = v / c
         for k, v in self.terminations.items():

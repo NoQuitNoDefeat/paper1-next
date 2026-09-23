@@ -136,3 +136,29 @@ def test_drain_evaluation_keeps_the_same_scene_then_stops_traffic():
     for k in range(40):
         assert base.births(k) == drained.births(k)
     assert all(not drained.births(k) for k in range(40, 60))
+
+
+@pytest.mark.parametrize("name", __import__("fanet_next.reward.standard", fromlist=["REWARD"]).REWARD.names())
+def test_every_reward_returns_the_four_components(name):
+    from fanet_next.reward.standard import REWARD
+
+    cfg = deep_merge(CFG, {"reward": {"type": name}})
+    env = build_env(cfg, build_graph=False)
+    env.reset(1)
+    for _ in range(5):
+        tr = env.step([])
+        assert set(tr.reward.parts) == {"service", "queue", "delay", "violation"}
+        assert np.isfinite(tr.reward.total)
+
+
+def test_select_command_applies_reliability_first_rule(tmp_path):
+    from fanet_next.experiment.select import select_checkpoint
+    from fanet_next.experiment.train import TrainingRun
+
+    cfg = load_config("configs/smoke.toml", ["training.keep_every=1", "training.checkpoint_every=1"])
+    TrainingRun(cfg, tmp_path).train(2, verbose=False)
+    out = select_checkpoint(tmp_path, episodes=2, drain=5, num_envs=2)
+    assert len(out["candidates"]) == 2 and out["selected"]["iteration"] in (1, 2)
+    if out["any_eligible"]:
+        assert out["selected"]["eligible"]
+    assert (tmp_path / "selection.json").exists()

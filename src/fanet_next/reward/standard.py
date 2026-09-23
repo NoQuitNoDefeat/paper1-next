@@ -31,7 +31,9 @@ class RewardBreakdown:
     parts: dict[str, float] = field(default_factory=dict)  # unweighted components
 
 
-def reward_components(facts: CycleFacts, hol_ref_s: float) -> dict[str, float]:
+def reward_components(facts: CycleFacts, hol_ref_s: float,
+                      violation_ref: float | None = None) -> dict[str, float]:
+    """Unweighted components; ``violation_ref=None`` normalises terminations by risk packets."""
     post = facts.post_service
     n_q = len(post.packets)
     if n_q:
@@ -42,7 +44,8 @@ def reward_components(facts: CycleFacts, hol_ref_s: float) -> dict[str, float]:
     else:
         service = queue = delay = 0.0
     terminated = len(set(facts.terminated_ids))
-    violation = terminated / max(facts.risk_packets, 1)
+    denom = max(facts.risk_packets, 1) if violation_ref is None else violation_ref
+    violation = terminated / denom
     return {"service": service, "queue": queue, "delay": delay, "violation": violation}
 
 
@@ -62,5 +65,26 @@ class StandardReward:
 
     def __call__(self, facts: CycleFacts) -> RewardBreakdown:
         parts = reward_components(facts, self.hol_ref_s)
+        total = self.scale * sum(w * parts[k] for k, w in self.weights().items())
+        return RewardBreakdown(total=float(total), parts=parts)
+
+
+@REWARD.register("fixed_violation_ref", role="control")
+class FixedViolationRefReward(StandardReward):
+    """Control (plan B): violation = terminated / fixed reference instead of / risk packets.
+
+    Under congestion the risk count grows, which dilutes the per-drop penalty of
+    the primary reward; a fixed reference keeps it constant.  This changes the
+    meaning of the violation term and is only a labelled control.
+    """
+
+    def __init__(self, alpha: float = 1.0, beta: float = 0.5, eta: float = 0.5,
+                 lambda_viol: float = 1.0, hol_ref_s: float = 0.2, scale: float = 1.0,
+                 violation_ref_packets: float = 300.0):
+        super().__init__(alpha, beta, eta, lambda_viol, hol_ref_s, scale)
+        self.violation_ref = float(violation_ref_packets)
+
+    def __call__(self, facts: CycleFacts) -> RewardBreakdown:
+        parts = reward_components(facts, self.hol_ref_s, self.violation_ref)
         total = self.scale * sum(w * parts[k] for k, w in self.weights().items())
         return RewardBreakdown(total=float(total), parts=parts)

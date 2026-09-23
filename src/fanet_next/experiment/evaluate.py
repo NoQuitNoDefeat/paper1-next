@@ -13,10 +13,10 @@ from .assemble import DEV_SEED_BASE, TEST_SEED_BASE, build_env, check_compatibil
 SPLITS = {"dev": DEV_SEED_BASE, "test": TEST_SEED_BASE}
 
 
-def split_seeds(split: str, episodes: int) -> list[int]:
+def split_seeds(split: str, episodes: int, offset: int = 0) -> list[int]:
     if split not in SPLITS:
         raise ValueError(f"split must be one of {sorted(SPLITS)}")
-    return [SPLITS[split] + i for i in range(episodes)]
+    return [SPLITS[split] + offset + i for i in range(episodes)]
 
 
 def eval_scenario(cfg: dict, drain_cycles: int = 0, overrides: dict | None = None) -> dict:
@@ -53,7 +53,7 @@ def paired(rows_a: list[dict], rows_b: list[dict], key: str) -> dict:
 
 def evaluate(cfg: dict, policy: Policy, *, split: str = "dev", episodes: int = 8,
              mode: str = "greedy", num_envs: int = 8, scenario: dict | None = None,
-             drain_cycles: int = 0) -> dict:
+             drain_cycles: int = 0, seed_offset: int = 0) -> dict:
     """Mean metrics plus per-episode rows; the same seeds give the same scenes for every policy."""
     scenario = scenario or eval_scenario(cfg, drain_cycles)
     envs = [build_env(cfg, run_id=f"eval-{split}-{i}", build_graph=policy.needs_graph,
@@ -61,7 +61,7 @@ def evaluate(cfg: dict, policy: Policy, *, split: str = "dev", episodes: int = 8
     manifest = check_compatibility(envs[0], policy)
     if hasattr(policy, "seed") and not policy.learnable:
         policy.seed(12345)
-    seeds = split_seeds(split, episodes)
+    seeds = split_seeds(split, episodes, seed_offset)
     rows = run_episodes(policy, envs, seeds, mode=mode)
     mean = merge_summaries(rows)
     for key in ("delivery_ratio", "e2e_delay_mean_s", "reward_mean"):
