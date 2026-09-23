@@ -1,0 +1,30 @@
+# Tiny, fast configuration for tests and smoke runs.
+extends = "base.toml"
+name = "smoke"
+
+[scenario]
+type = "random"
+num_nodes = 8
+area_m = 250.0
+horizon = 12
+flow_rate_pps = 30.0
+
+[model]
+hidden = 16
+actor_head = { type = "mlp", hidden = 16 }
+critic_head = { type = "mlp", hidden = 16 }
+
+[trainer]
+type = "ppo"
+epochs = 2
+minibatch_cycles = 16
+
+[training]
+iterations = 2
+num_envs = 2
+rollout_cycles = 8
+eval_every = 0
+eval_episodes = 2
+checkpoint_every = 1
+keep_every = 0
+threads = 1

@@ -1,0 +1,8 @@
+# 环境变体：决策时信道估计有误差，执行时有衰落和窗口内移动
+extends = "../base.toml"
+name = "env-noisy-channel"
+
+[backend.channel]
+type = "lognormal"
+estimate_error_db = 1.0
+fading_db = 2.0

@@ -1,0 +1,99 @@
+# Primary method: dual-graph micro-action PPO, full cumulative SINR + half duplex,
+# Python lightweight backend.  Every section selects an implementation by `type`;
+# `fanet-next components` lists what is available.  Choices are explained in
+# docs/decisions.md.
+
+name = "base"
+seed = 0
+
+[scenario]                      # 场景与业务
+type = "random"
+num_nodes = 16
+area_m = 300.0
+altitude_m = [80.0, 120.0]
+speed_mps = [5.0, 30.0]         # sampled per episode
+flow_rate_pps = [10.0, 30.0]    # per flow, one flow per node, sampled per episode
+cycle_length = 0.02
+horizon = 500                   # cycles per episode (10 s)
+packet_size = 1024
+queue_capacity = 64             # packets per registered next-hop queue
+waiting_capacity = 16
+waiting_max_wait = 1.0
+
+[scenario.radio]
+tx_power_dbm = 20.0
+noise_dbm = -80.0
+pathloss_ref_db = 40.05
+pathloss_exponent = 2.5
+sinr_threshold_db = 4.771212547196624
+rate_bps = 4e6                  # 9 packets per link per cycle
+service_window_s = 0.02
+
+[backend]                       # 环境与执行后端
+type = "lightweight"
+stale_queue_policy = "rehome"
+
+[backend.routing]
+type = "min_hop"
+update_every = 25
+snr_margin_db = 6.0
+
+[backend.channel]
+type = "ideal"
+
+[candidates]
+type = "standard"
+
+[constraints]                   # 微步调度与约束
+resource = "half_duplex"
+interference = "full_sinr"
+
+[observation]                   # 观测与双图
+type = "standard"
+hol_ref_s = 0.2
+
+[reward]                        # 奖励与指标
+type = "standard"
+alpha = 1.0
+beta = 0.5
+eta = 0.5
+lambda_viol = 1.0
+hol_ref_s = 0.2
+
+[model]                         # 模型
+type = "dual_graph"
+hidden = 64
+share_trunk = true
+comm_encoder = { type = "mpnn", layers = 2 }
+lift = { type = "concat" }
+interaction_encoder = { type = "mpnn", layers = 1 }
+set_summary = { type = "gated_sum" }
+actor_head = { type = "mlp", hidden = 128 }
+critic_head = { type = "mlp", hidden = 128 }
+
+[policy]
+type = "ppo"
+
+[trainer]                       # 训练
+type = "ppo"
+clip = 0.2
+epochs = 4
+minibatch_cycles = 256
+ent_coef = 0.01
+vf_coef = 0.5
+max_grad_norm = 0.5
+
+[training]
+iterations = 200
+num_envs = 8
+rollout_cycles = 128
+gamma = 0.99
+gae_lambda = 0.95
+reward_norm = true
+lr = 3e-4
+eval_every = 10
+eval_episodes = 8
+eval_drain_cycles = 250         # dev evaluation stops traffic at the horizon and drains
+checkpoint_every = 10
+keep_every = 50
+threads = 1                     # bit-reproducible; run seeds in parallel instead

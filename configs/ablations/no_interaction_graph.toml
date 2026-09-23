@@ -1,0 +1,6 @@
+# 消融：去掉链路交互图编码（链路只看自身端点上下文）
+extends = "../base.toml"
+name = "abl-no-interaction"
+
+[model]
+interaction_encoder = { type = "none" }

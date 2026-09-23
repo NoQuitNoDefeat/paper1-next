@@ -1,0 +1,74 @@
+{
+  "purpose": "Documentation handoff for paper1-next; provenance only, not a compatibility or experiment freeze requirement.",
+  "prepared_at_utc": "2026-09-23 04:42:34 UTC",
+  "transformation": "Curated research-method summary and new module/integration guidance based on the user's discussion. Not verbatim source copies.",
+  "sources": [
+    {
+      "path": "/Volumes/FANET_Data/projects/paper1-pluginized/docs/research/第19版.md",
+      "sha256": "b6ffc681cfb264dc27880fac1a77002709a65ff7c2871f6d0a0b8f85e5818ad9",
+      "purpose": "Research task, dual graphs, micro-action PPO, feasibility, reward and evaluation definitions"
+    },
+    {
+      "path": "/Volumes/FANET_Data/projects/paper1-baseline/docs/architecture/ns3-ai-wire-v1.md",
+      "sha256": "949f418e1038e434f95db316f8ea83ccde8ba33e91e74e02674d725156b3b3cb",
+      "purpose": "Base byte container and historical protocol semantics referenced by v2"
+    },
+    {
+      "path": "/Volumes/FANET_Data/projects/paper1-baseline/docs/architecture/ns3-ai-wire-v2.md",
+      "sha256": "0a486af88a457ac4bb16f9ddcc65996483e303dc94a1b36563824a0ccfc69545",
+      "purpose": "Wireless, timing, execution and control interface description"
+    },
+    {
+      "path": "/Volumes/FANET_Data/projects/paper1-baseline/src/fanet_scheduler/ns3_adapter/backend.py",
+      "sha256": "c7a1e62cf5f17612e7638c46b7900d4129807c907d7c0a850d3a18b2e4125285",
+      "purpose": "Existing Python backend interface and adaptation dependencies"
+    },
+    {
+      "path": "/Volumes/FANET_Data/projects/paper1-baseline/src/fanet_scheduler/ns3_adapter/wire.py",
+      "sha256": "04e02eec230931dd5c8e740c84d4c117258bd9af1bf69ca656ecb53761a47064",
+      "purpose": "Existing protocol version constant"
+    },
+    {
+      "path": "/Volumes/FANET_Data/projects/paper1-baseline/dependencies/ns3.lock",
+      "sha256": "ce23bf2eff6e942c6332da3a04bc59edaf754a15e9ef294216f33076fa6cec9a",
+      "purpose": "Existing ns-3 dependency identity"
+    },
+    {
+      "path": "/Volumes/FANET_Data/projects/paper1-baseline/dependencies/ns3-ai.lock",
+      "sha256": "d5b66bead9baad1846eed191573e96fc224075319217e42ebf6593bf3720495b",
+      "purpose": "Existing ns3-ai dependency identity and patch references"
+    }
+  ],
+  "conversation_basis": "User requests research method and modular responsibilities, minimal restrictions and broad implementation autonomy; ns-3 integration guidance now, adapter code later.",
+  "superseded_task_copies": [
+    {
+      "path": "docs/reference/research-v19.md",
+      "sha256": "8700cc8df7b672647cb6d70ddaa3e34808a4e18018bbb8fc5fddb7f594e53d84"
+    },
+    {
+      "path": "docs/reference/experiments-stage67-results.md",
+      "sha256": "5dad55961dffea3ab855c4403a5f72ef8c4f660c3b87f0d1be2d30a9e16b32c8"
+    },
+    {
+      "path": "docs/reference/experiments-stage67-diagnostics.md",
+      "sha256": "496dc282f56adf1660c9d7f5e3cc56d177353b179a4de1c6b5e1b53cf8a425c9"
+    },
+    {
+      "path": "docs/reference/configs/minimal-loop.json",
+      "sha256": "6663201ffdbf2c30495923e8703a017d616cafb3aa6065c27867e1c262bc09d6"
+    },
+    {
+      "path": "docs/reference/configs/minimal-training.json",
+      "sha256": "6ec9827937613de2bb62743f8bbe62f374691b936090bdd3285e7d8a7ae3123c"
+    }
+  ],
+  "generated_documents": [
+    "README.md",
+    "CLAUDE.md",
+    "docs/research-method.md",
+    "docs/module-design.md",
+    "docs/ns3-integration.md",
+    "docs/reference/README.md"
+  ],
+  "scope": "Documentation only; no source code, models, experimental results, simulator checkout, build outputs or runtime environment copied; no new training or ns-3 execution."
+}

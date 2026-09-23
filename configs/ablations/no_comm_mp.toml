@@ -1,0 +1,6 @@
+# 消融：通信图不做消息传递（节点只用自身特征）
+extends = "../base.toml"
+name = "abl-no-comm-mp"
+
+[model]
+comm_encoder = { type = "node_mlp" }

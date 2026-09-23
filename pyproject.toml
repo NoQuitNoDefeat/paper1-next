@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fanet-next"
+version = "0.1.0"
+description = "UAV/FANET MAC scheduling with dual-graph micro-action PPO (paper1-next)"
+requires-python = ">=3.11"
+dependencies = ["numpy>=2.0", "torch==2.14.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+fanet-next = "fanet_next.experiment.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fanet_next*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--import-mode=importlib", "-ra"]
+pythonpath = ["tests"]
+markers = ["slow: longer end-to-end checks"]

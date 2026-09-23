@@ -1,0 +1,6 @@
+# 约束对照：两两相容代替完整累计 SINR（明确标记为对照，不是主方法）
+extends = "../base.toml"
+name = "ctl-pairwise"
+
+[constraints]
+interference = "pairwise"

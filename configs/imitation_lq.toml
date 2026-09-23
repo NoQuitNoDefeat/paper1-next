@@ -1,0 +1,18 @@
+# 训练变体：先模仿 longest_queue（最大似然 + Critic 回归），再用 PPO 继续训练。
+# 只改变训练起点，调度方法（双图微动作 PPO、完整 SINR）不变。
+extends = "base.toml"
+name = "imit-lq"
+
+[reward]
+type = "standard"
+alpha = 1.0
+beta = 0.5
+eta = 0.5
+lambda_viol = 5.0
+hol_ref_s = 0.2
+
+[imitation]
+teacher = "longest_queue"
+cycles = 500          # per training environment (8 × 500 teacher cycles)
+epochs = 8
+lr = 1e-3

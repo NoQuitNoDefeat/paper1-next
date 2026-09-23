@@ -1,0 +1,6 @@
+# 消融：Lift 不含直接链路特征通路
+extends = "../base.toml"
+name = "abl-no-direct"
+
+[model]
+lift = { type = "context_only" }
