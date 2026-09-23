@@ -137,8 +137,10 @@ def main(argv: list[str] | None = None) -> None:
     st.add_argument("--root", default="results")
     st.add_argument("--watch", type=float, default=0.0, help="refresh every N seconds")
     sub.add_parser("components")
+    for sp in (e, sel):
+        sp.add_argument("--threads", type=int, default=4, help="torch CPU threads")
     args = p.parse_args(argv)
-    torch.set_num_threads(4)
+    torch.set_num_threads(getattr(args, "threads", 4))
     if args.cmd == "train":
         _cmd_train(args)
     elif args.cmd == "resume":
