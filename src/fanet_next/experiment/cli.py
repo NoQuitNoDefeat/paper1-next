@@ -133,6 +133,9 @@ def main(argv: list[str] | None = None) -> None:
     sel.add_argument("--drain", type=int, default=250)
     sel.add_argument("--delta", type=float, default=0.002)
     sel.add_argument("--num-envs", type=int, default=8)
+    st = sub.add_parser("status", help="read-only dashboard of training runs")
+    st.add_argument("--root", default="results")
+    st.add_argument("--watch", type=float, default=0.0, help="refresh every N seconds")
     sub.add_parser("components")
     args = p.parse_args(argv)
     torch.set_num_threads(4)
@@ -140,6 +143,9 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_train(args)
     elif args.cmd == "resume":
         _cmd_resume(args)
+    elif args.cmd == "status":
+        from .status import main as status_main
+        status_main(args.root, args.watch)
     elif args.cmd == "select":
         from .select import select_checkpoint
         select_checkpoint(args.run_dir, reference=args.reference, episodes=args.episodes,
