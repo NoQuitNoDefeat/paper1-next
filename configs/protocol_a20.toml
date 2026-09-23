@@ -1,0 +1,12 @@
+# 主方法冻结协议（E5 确认）：longest_queue 模仿预热 + PPO 微调，奖励 A，λ_viol = 20。
+# 消融与泛化实验都以此为基准；检查点选择规则见 experiment/select.py。
+extends = "imitation_lq.toml"
+name = "protocol-a20"
+
+[reward]
+type = "standard"
+alpha = 1.0
+beta = 0.5
+eta = 0.5
+lambda_viol = 20.0
+hol_ref_s = 0.2

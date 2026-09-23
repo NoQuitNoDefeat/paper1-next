@@ -1,0 +1,52 @@
+{
+  "name": "E7 零样本泛化（不重新训练）",
+  "out": "results/e7/confirm",
+  "eval": {
+    "split": "dev",
+    "seed_offset": 16,
+    "episodes": 32,
+    "drain": 250,
+    "threads": 3
+  },
+  "baseline_config": "configs/protocol_a20.toml",
+  "baselines": [
+    "longest_queue",
+    "hol_weighted"
+  ],
+  "fixed": {
+    "仅模仿": "results/runs/imit-lq-bc-only/checkpoints/latest.pt"
+  },
+  "groups": {
+    "主方法 A-λ20": [
+      "results/e5/A-lv20-s0",
+      "results/e5/A-lv20-s1",
+      "results/e5/A-lv20-s2"
+    ]
+  },
+  "variants": {
+    "default": [],
+    "nodes12": [
+      "scenario.num_nodes=12"
+    ],
+    "nodes24_dense": [
+      "scenario.num_nodes=24"
+    ],
+    "nodes24_same_density": [
+      "scenario.num_nodes=24",
+      "scenario.area_m=424.0"
+    ],
+    "load_high": [
+      "scenario.flow_rate_pps=[30.0, 45.0]"
+    ],
+    "speed_high": [
+      "scenario.speed_mps=[30.0, 60.0]"
+    ],
+    "channel_noisy": [
+      "backend.channel.type=\"lognormal\""
+    ]
+  },
+  "compare": [
+    "longest_queue",
+    "hol_weighted"
+  ]
+}

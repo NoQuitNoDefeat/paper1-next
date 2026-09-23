@@ -1,5 +1,5 @@
 # 消融：Lift 不含直接链路特征通路
-extends = "../base.toml"
+extends = "../protocol_a20.toml"
 name = "abl-no-direct"
 
 [model]

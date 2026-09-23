@@ -1,5 +1,5 @@
 # 消融：通信图不做消息传递（节点只用自身特征）
-extends = "../base.toml"
+extends = "../protocol_a20.toml"
 name = "abl-no-comm-mp"
 
 [model]

@@ -253,3 +253,39 @@ dev 16 回合，排空 250 周期；配对差均相对 longest_queue：
 - 合并置信区间把 96 对当作独立样本，没有计入同一场景重复使用带来的相关性，所以要与逐种子结果一起看。
 - 确认集仍属于 dev 划分（只是未参与选择），test 集尚未使用。
 - 只有一个场景族，只有理想信道。
+
+## E6 消融（预先登记）
+
+**协议**：与 E5 的 A-λ20 完全相同（冻结为 `configs/protocol_a20.toml`）。每个消融只替换一个部件，其余完全一致，包括模仿预热、微调、检查点选择规则和留出确认。每组 3 个训练种子。完整模型组直接复用 E5 的 A-λ20 运行。
+
+| 消融 | 配置 | 检验的问题 |
+| --- | --- | --- |
+| 去掉交互图 | `ablations/no_interaction_graph.toml` | 链路之间的冲突/干扰关系表示是否有用 |
+| 去掉已选摘要 | `ablations/no_set_summary.toml` | 逐条选择时感知已选集合是否有用 |
+| 去掉通信图消息传递 | `ablations/no_comm_mp.toml` | 节点邻域上下文是否有用 |
+| 去掉直接链路通路 | `ablations/no_direct_link.toml` | Lift 中的直接链路特征是否有用 |
+| 两两相容约束 | `ablations/pairwise_constraint.toml` | 完整累计 SINR 约束相对两两检查的价值（约束对照） |
+
+**比较**：用 `tools/confirm.py --spec configs/experiments/e6_ablation.json` 在 dev 种子 16–47 上评估（排空 250 周期）。
+
+- 同时与 longest_queue、完整模型配对比较。
+- 组的统计：每个场景先对 3 个训练种子取平均，再按 32 个场景配对。
+- 如果某个部件去掉后交付率或时延没有显著变差，就如实报告“该部件在本场景族中未显示必要性”。
+
+## E7 零样本泛化（预先登记）
+
+**模型**：E5 选中的 A-λ20 三个种子，以及仅模仿、longest_queue、hol_weighted。所有模型不重新训练。
+
+**评估**：`tools/confirm.py --spec configs/experiments/e7_generalization.json`，dev 种子 16–47，排空 250 周期。
+
+| 变体 | 改变 | 检验的问题 |
+| --- | --- | --- |
+| default | 无 | 与 E5 对齐的参照 |
+| nodes12 | 12 个节点 | 更小、更稀疏的网络 |
+| nodes24_dense | 24 个节点，同样 300 m | 更密、干扰更强、负载更重 |
+| nodes24_same_density | 24 个节点，424 m（密度相同） | 更大的网络、更长的路径 |
+| load_high | 每流 30–45 包/秒 | 超出训练负载范围 |
+| speed_high | 30–60 m/s | 更快的拓扑变化 |
+| channel_noisy | lognormal 信道（估计误差 1 dB、执行衰落 2 dB、窗口内移动） | 计划可行 ≠ 执行成功 |
+
+**判读**：以相对 longest_queue 的可靠性判定标准为先，再看时延。重负载变体中 250 个周期可能排不空，“结束时在网”一列会报告剩余包数。

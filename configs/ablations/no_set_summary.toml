@@ -1,5 +1,5 @@
 # 消融：去掉已选摘要（Actor 只通过掩码感知已选集合）
-extends = "../base.toml"
+extends = "../protocol_a20.toml"
 name = "abl-no-summary"
 
 [model]

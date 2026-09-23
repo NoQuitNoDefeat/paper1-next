@@ -1,5 +1,5 @@
 # 环境变体：决策时信道估计有误差，执行时有衰落和窗口内移动
-extends = "../base.toml"
+extends = "../protocol_a20.toml"
 name = "env-noisy-channel"
 
 [backend.channel]

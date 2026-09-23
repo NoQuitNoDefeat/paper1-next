@@ -1,0 +1,56 @@
+{
+  "name": "E6 消融（冻结协议 protocol_a20，每组 3 个训练种子）",
+  "out": "results/e6/confirm",
+  "eval": {
+    "split": "dev",
+    "seed_offset": 16,
+    "episodes": 32,
+    "drain": 250,
+    "threads": 3
+  },
+  "baseline_config": "configs/protocol_a20.toml",
+  "baselines": [
+    "longest_queue",
+    "hol_weighted"
+  ],
+  "fixed": {},
+  "groups": {
+    "完整模型": [
+      "results/e5/A-lv20-s0",
+      "results/e5/A-lv20-s1",
+      "results/e5/A-lv20-s2"
+    ],
+    "去掉交互图": [
+      "results/e6/no_interaction_graph-s0",
+      "results/e6/no_interaction_graph-s1",
+      "results/e6/no_interaction_graph-s2"
+    ],
+    "去掉已选摘要": [
+      "results/e6/no_set_summary-s0",
+      "results/e6/no_set_summary-s1",
+      "results/e6/no_set_summary-s2"
+    ],
+    "去掉通信图消息传递": [
+      "results/e6/no_comm_mp-s0",
+      "results/e6/no_comm_mp-s1",
+      "results/e6/no_comm_mp-s2"
+    ],
+    "去掉直接链路通路": [
+      "results/e6/no_direct_link-s0",
+      "results/e6/no_direct_link-s1",
+      "results/e6/no_direct_link-s2"
+    ],
+    "两两相容约束（对照）": [
+      "results/e6/pairwise_constraint-s0",
+      "results/e6/pairwise_constraint-s1",
+      "results/e6/pairwise_constraint-s2"
+    ]
+  },
+  "variants": {
+    "default": []
+  },
+  "compare": [
+    "longest_queue",
+    "完整模型"
+  ]
+}
