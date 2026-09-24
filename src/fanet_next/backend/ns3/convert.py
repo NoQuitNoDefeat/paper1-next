@@ -235,4 +235,6 @@ def facts_from(cycle: dict, ep: Episode, k: int) -> CycleFacts:
         moved_to_waiting=sum(e["kind"] == "wait_admit" for e in events),
         restored_from_waiting=sum(e["kind"] == "queue_admit" and e["origin"] == "waiting"
                                   for e in events),
-        rehomed=0, relay_terminated=relay_terminated)
+        rehomed=sum(e["origin"] == "rehome" for e in events
+                    if e["kind"] in ("queue_admit", "wait_admit", "terminal")),
+        relay_terminated=relay_terminated)

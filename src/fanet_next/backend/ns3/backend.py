@@ -35,16 +35,17 @@ class Ns3Backend(Backend):
     supports_state = False
 
     def __init__(self, channel: dict | str = "ideal", routing: dict | str = "min_hop",
-                 stale_queue_policy: str = "keep", waiting_restore: str = "drop",
+                 stale_queue_policy: str = "rehome", waiting_restore: str = "keep",
                  execution_profile: str = "full-sinr-v1", ns3_root: str | None = None,
                  timeout_seconds: float = 60.0):
         self.channel = CHANNEL.build(channel)
         if not isinstance(self.channel, IdealChannel):
             raise ValueError("ns3 full-sinr profile executes on the observed (ideal) channel")
         self.routing: Routing = ROUTING.build(routing)
-        if (stale_queue_policy, waiting_restore) != ("keep", "drop"):
-            raise ValueError("the unmodified C++ ledger keeps stale queues and drops restored "
-                             "packets that find their queue full (keep/drop)")
+        if stale_queue_policy not in {"rehome", "keep"} or waiting_restore not in {"keep", "drop"}:
+            raise ValueError("stale_queue_policy in {rehome, keep}, waiting_restore in {keep, drop}")
+        self.semantics = {"stale_queue_policy": stale_queue_policy,
+                          "waiting_restore": waiting_restore}
         if execution_profile not in PROFILES:
             raise ValueError(f"execution_profile must be one of {PROFILES}")
         self.profile = execution_profile
@@ -83,6 +84,7 @@ class Ns3Backend(Backend):
         self.close()
         self.run_id, self.episode = run_id, episode
         self._ep = build_episode(scenario, self.routing, execution_profile=self.profile)
+        self._ep.payload["config"].update(self.semantics)
         body = encode_value(self._ep.payload, limit=1 << 30)
         physical = max(len(encode_value(p)) for p in self._ep.payload["physical_inputs"])
         tx = _mib(len(body) + HEADER.size + 4096)

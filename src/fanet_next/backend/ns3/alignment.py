@@ -53,7 +53,8 @@ def compare_facts(a, b, where: str) -> list[str]:
     _cmp(f"{where} post packets", a.post_service.packets, b.post_service.packets, out)
     _cmp(f"{where} post hol", a.post_service.hol_wait, b.post_service.hol_wait, out, TIME_TOL)
     for f in ("births", "risk_packets", "queued_end", "waiting_end", "waiting_post_service",
-              "moved_to_waiting", "restored_from_waiting", "relay_terminated", "delivered_bytes"):
+              "moved_to_waiting", "restored_from_waiting", "relay_terminated", "delivered_bytes",
+              "rehomed"):
         if getattr(a, f) != getattr(b, f):
             out.append(f"{where} {f}: {getattr(a, f)} != {getattr(b, f)}")
     da = dict(zip(a.delivered_ids, a.delivered_delays))
@@ -71,13 +72,17 @@ def compare_facts(a, b, where: str) -> list[str]:
 
 
 def align_episode(cfg: dict, seed: int, policy: str | dict = "longest_queue", *,
-                  horizon: int | None = None, model_state=None, max_report: int = 20) -> dict:
-    """Run one episode on both backends in lockstep; return counts and the first mismatches."""
+                  horizon: int | None = None, model_state=None, max_report: int = 20,
+                  stale_queue_policy: str = "rehome", waiting_restore: str = "keep") -> dict:
+    """Run one episode on both backends in lockstep; return counts and the first mismatches.
+
+    Both backends use the same queue semantics: this project's (rehome/keep, default)
+    or the original ledger's (keep/drop).
+    """
     backend = cfg.get("backend", {})
     common = {k: backend[k] for k in ("routing",) if k in backend}
-    light = deep_merge(cfg, {"backend": {"type": "lightweight", "channel": "ideal",
-                                         "stale_queue_policy": "keep", "waiting_restore": "drop",
-                                         **common}})
+    common.update(stale_queue_policy=stale_queue_policy, waiting_restore=waiting_restore)
+    light = deep_merge(cfg, {"backend": {"type": "lightweight", "channel": "ideal", **common}})
     ns3 = deep_merge(cfg, {"backend": {"type": "ns3", **common}})
     if horizon is not None:
         light = deep_merge(light, {"scenario": {"horizon": horizon}})
@@ -91,7 +96,7 @@ def align_episode(cfg: dict, seed: int, policy: str | dict = "longest_queue", *,
     try:
         inp_a, inp_b = env_a.reset(seed), env_b.reset(seed)
         mism += compare_reports(inp_a.report, inp_b.report, "boundary 0")
-        cycles = served = delivered = terminated = 0
+        cycles = served = delivered = terminated = rehomed = restored = to_waiting = 0
         reward_diff = 0.0
         while True:
             if not np.array_equal(inp_a.problem.links, inp_b.problem.links):
@@ -107,6 +112,9 @@ def align_episode(cfg: dict, seed: int, policy: str | dict = "longest_queue", *,
             served += int(ta.facts.served_packets.sum())
             delivered += len(ta.facts.delivered_ids)
             terminated += len(ta.facts.terminated_ids)
+            rehomed += ta.facts.rehomed
+            restored += ta.facts.restored_from_waiting
+            to_waiting += ta.facts.moved_to_waiting
             if ta.end != tb.end:
                 mism.append(f"cycle {cycles}: end {ta.end} != {tb.end}")
             if ta.end.value != "continue" or len(mism) >= max_report:
@@ -115,5 +123,6 @@ def align_episode(cfg: dict, seed: int, policy: str | dict = "longest_queue", *,
     finally:
         env_b.backend.close()
     return {"seed": seed, "cycles": cycles, "served": served, "delivered": delivered,
-            "terminated": terminated, "max_reward_diff": reward_diff,
+            "terminated": terminated, "rehomed": rehomed, "restored": restored,
+            "to_waiting": to_waiting, "max_reward_diff": reward_diff,
             "mismatches": mism[:max_report], "aligned": not mism}

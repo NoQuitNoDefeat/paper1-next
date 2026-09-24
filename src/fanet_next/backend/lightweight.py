@@ -257,6 +257,9 @@ class LightweightBackend(Backend):
                         rehomed += len(stale)
         for w in self.waiting:
             pending += [(p, True) for p in w if self.next_hop[p.node, p.dst] >= 0]
+            if self.waiting_restore == "drop":
+                # original ledger: restorable packets leave the area before admission
+                w[:] = [p for p in w if self.next_hop[p.node, p.dst] < 0]
 
         # 5. admission in (node arrival, id) order
         pending.sort(key=lambda e: (e[0].node_arrived, e[0].pid))
@@ -269,14 +272,14 @@ class LightweightBackend(Backend):
                     raise ExecutionError(f"route {p.node}->{nh} points to an unregistered queue")
                 if len(self.queues[q]) < self.qcap[q]:
                     if from_waiting:
-                        self.waiting[p.node].remove(p)
+                        if self.waiting_restore == "keep":
+                            self.waiting[p.node].remove(p)
                         restored += 1
                     p.enqueued, p.retries = t1, 0
                     self.queues[q].append(p)
                 elif not from_waiting:
                     terminate("queue_overflow", p)
                 elif self.waiting_restore == "drop":
-                    self.waiting[p.node].remove(p)
                     terminate("queue_overflow", p)
             elif len(self.waiting[p.node]) < self.wcap[p.node]:
                 p.waiting_since = t1

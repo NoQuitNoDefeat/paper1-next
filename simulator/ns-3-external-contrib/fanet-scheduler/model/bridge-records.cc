@@ -247,16 +247,43 @@ ReadInitialization(const Value& v)
                 "unknown execution profile");
     }
     const auto& c = v.At("config");
-    c.Object({"node_ids",
-              "queues",
-              "waiting_areas",
-              "packet_size_bytes",
-              "start_ns",
-              "end_ns",
-              "period_ns",
-              "packet_deadlines_enabled",
-              "retransmissions_enabled"});
+    const bool semantics = std::get<Map>(c.data).contains("stale_queue_policy");
+    if (semantics)
+    {
+        c.Object({"node_ids",
+                  "queues",
+                  "waiting_areas",
+                  "packet_size_bytes",
+                  "start_ns",
+                  "end_ns",
+                  "period_ns",
+                  "packet_deadlines_enabled",
+                  "retransmissions_enabled",
+                  "stale_queue_policy",
+                  "waiting_restore"});
+    }
+    else
+    {
+        c.Object({"node_ids",
+                  "queues",
+                  "waiting_areas",
+                  "packet_size_bytes",
+                  "start_ns",
+                  "end_ns",
+                  "period_ns",
+                  "packet_deadlines_enabled",
+                  "retransmissions_enabled"});
+    }
     auto& config = result.config;
+    if (semantics)
+    {
+        const auto stale = c.At("stale_queue_policy").S();
+        const auto restore = c.At("waiting_restore").S();
+        Require((stale == "keep" || stale == "rehome") && (restore == "drop" || restore == "keep"),
+                "unknown queue semantics");
+        config.rehomeStaleQueues = stale == "rehome";
+        config.keepRestoredWaiting = restore == "keep";
+    }
     config.packetBytes = c.At("packet_size_bytes").U();
     config.start = c.At("start_ns").I();
     config.end = c.At("end_ns").I();

@@ -675,6 +675,10 @@ ControlledEnvironment::Settle()
                          .nextHop)
             {
                 m_pending.push_back({entry.packet, area.node, entry.arrived, "waiting"});
+                if (config.keepRestoredWaiting)
+                {
+                    survivors.push_back(entry); // leaves the area only once a queue admits it
+                }
             }
             else
             {
@@ -682,6 +686,32 @@ ControlledEnvironment::Settle()
             }
         }
         area.entries = std::move(survivors);
+    }
+    // paper1-next: when routes are updated at this boundary, queued packets whose next hop
+    // changed re-enter the unified admission with their original node arrival time.
+    const auto& frame = m_trajectory->at(m_observation->reference.epoch);
+    if (config.rehomeStaleQueues && !frame.routeUpdates.empty())
+    {
+        for (auto& queue : m_work.queues)
+        {
+            std::vector<Entry> kept;
+            for (const auto& entry : queue.entries)
+            {
+                const auto hop = FindRoute(m_admissionRoutes,
+                                           queue.key.first,
+                                           FindPacket(m_work, entry.packet).destination)
+                                     .nextHop;
+                if (hop && *hop == queue.key.second)
+                {
+                    kept.push_back(entry);
+                }
+                else
+                {
+                    m_pending.push_back({entry.packet, queue.key.first, entry.arrived, "rehome"});
+                }
+            }
+            queue.entries = std::move(kept);
+        }
     }
     Record("unified_admission");
     sortPending();
@@ -695,17 +725,27 @@ ControlledEnvironment::Settle()
             auto queue = std::ranges::find(m_work.queues, key, &Queue::key);
             const auto capacity =
                 std::ranges::find(config.queues, key, &QueueConfig::key)->capacity;
+            const bool restoring = arrival.origin == "waiting" && config.keepRestoredWaiting;
             if (queue->entries.size() >= capacity / config.packetBytes)
             {
-                terminate(arrival.packet,
-                          arrival.node,
-                          "overflow",
-                          "queue_capacity",
-                          arrival.origin,
-                          key);
+                if (!restoring) // a restorable waiting packet otherwise stays in its area
+                {
+                    terminate(arrival.packet,
+                              arrival.node,
+                              "overflow",
+                              "queue_capacity",
+                              arrival.origin,
+                              key);
+                }
             }
             else
             {
+                if (restoring)
+                {
+                    auto area = std::ranges::find(m_work.waiting, arrival.node, &Waiting::node);
+                    std::erase_if(area->entries,
+                                  [&](const auto& e) { return e.packet == arrival.packet; });
+                }
                 queue->entries.push_back({arrival.packet, arrival.arrived, end});
                 m_result->events.push_back({"queue_admit",
                                             arrival.packet,
