@@ -31,9 +31,13 @@
     "nodes24_dense": [
       "scenario.num_nodes=24"
     ],
-    "nodes24_same_density": [
+    "nodes24_sparse424": [
       "scenario.num_nodes=24",
       "scenario.area_m=424.0"
+    ],
+    "nodes24_same_density": [
+      "scenario.num_nodes=24",
+      "scenario.area_m=367.4"
     ],
     "load_high": [
       "scenario.flow_rate_pps=[30.0, 45.0]"
