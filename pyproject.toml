@@ -24,4 +24,4 @@ minversion = "8.0"
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--import-mode=importlib", "-ra"]
 pythonpath = ["tests"]
-markers = ["slow: longer end-to-end checks"]
+markers = ["slow: longer end-to-end checks", "ns3: needs the built ns-3 tree"]
