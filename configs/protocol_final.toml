@@ -1,0 +1,8 @@
+# 定稿主方法（用户 2026-09-24 确认，依据 E6/E6b/E8）：
+# longest_queue 模仿预热 + PPO 微调，奖励 A（λ_viol = 20），完整累计 SINR，无已选摘要。
+# 与 E6 的 ablations/no_set_summary.toml 等价（仅 name 不同）；原门控求和摘要保留为对照（protocol_a20.toml）。
+extends = "protocol_a20.toml"
+name = "protocol-final"
+
+[model]
+set_summary = { type = "none" }

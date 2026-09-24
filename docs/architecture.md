@@ -36,7 +36,7 @@
 | 场景与业务 | `scenario`、`routing`、`channel` | `scenario/` | random（主）、fixed（脚本化）；min_hop；ideal（主）、lognormal |
 | 环境与执行后端 | `backend` | `backend/` | lightweight（主）；ns-3 后续按同一契约接入 |
 | 观测与双图 | `observation` | `observation/` | standard |
-| 模型 | `model` 及 `comm_encoder`、`lift`、`interaction_encoder`、`set_summary`、`actor_head`、`critic_head` | `model/` | dual_graph；各子部件都有主实现和消融对照 |
+| 模型 | `model` 及 `comm_encoder`、`lift`、`interaction_encoder`、`set_summary`、`actor_head`、`critic_head` | `model/` | dual_graph；各子部件都有主实现和消融对照。`set_summary`：none（主）、gated_sum（对照，研究方案原设计）、gated_mean（变体）；模型选项 `candidate_dynamics` 接入控制器逐步提供的候选特征（变体） |
 | 微步调度与约束 | `candidates`、`resource`、`interference` | `scheduling/` | standard；half_duplex；full_sinr（主）+ pairwise / new_link_only / none（对照） |
 | 决策策略 | `policy` | `policy/` | ppo（主）；random、longest_queue、oldest_hol、hol_weighted（基线） |
 | 奖励与指标 | `reward` | `reward/` | standard（四分项）；指标在 `reward/metrics.py` 单独记录 |

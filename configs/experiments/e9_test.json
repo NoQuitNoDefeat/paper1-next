@@ -1,0 +1,66 @@
+{
+  "name": "E9 测试集最终评估（定稿主方法：无摘要）",
+  "out": "results/e9/confirm",
+  "eval": {
+    "split": "test",
+    "seed_offset": 0,
+    "episodes": 64,
+    "drain": 1000,
+    "threads": 3
+  },
+  "baseline_config": "configs/protocol_final.toml",
+  "baselines": [
+    "longest_queue",
+    "hol_weighted",
+    "random"
+  ],
+  "fixed": {
+    "仅模仿": "results/runs/imit-lq-bc-only/checkpoints/latest.pt"
+  },
+  "groups": {
+    "主方法（无摘要）": [
+      "results/e6/no_set_summary-s0",
+      "results/e6/no_set_summary-s1",
+      "results/e6/no_set_summary-s2",
+      "results/e9/final-s3",
+      "results/e9/final-s4"
+    ],
+    "原门控求和（原设计）": [
+      "results/e5/A-lv20-s0",
+      "results/e5/A-lv20-s1",
+      "results/e5/A-lv20-s2"
+    ],
+    "控制器动态特征（时延变体）": [
+      "results/e8/summary_controller_dyn-s0",
+      "results/e8/summary_controller_dyn-s1",
+      "results/e8/summary_controller_dyn-s2"
+    ],
+    "纯PPO（从零训练）": [
+      "results/runs/base-lv5-s0",
+      "results/runs/base-lv5-s1",
+      "results/runs/base-lv5-s2"
+    ]
+  },
+  "variants": {
+    "default": [],
+    "nodes24_dense": [
+      "scenario.num_nodes=24"
+    ],
+    "nodes24_same_density": [
+      "scenario.num_nodes=24",
+      "scenario.area_m=367.4"
+    ],
+    "load_high": [
+      "scenario.flow_rate_pps=[30.0, 45.0]"
+    ],
+    "channel_noisy": [
+      "backend.channel.type=\"lognormal\""
+    ]
+  },
+  "compare": [
+    "longest_queue",
+    "hol_weighted",
+    "原门控求和（原设计）",
+    "仅模仿"
+  ]
+}

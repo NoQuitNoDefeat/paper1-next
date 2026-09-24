@@ -135,9 +135,9 @@ class Readout(nn.Module):
 
 
 # ------------------------------------------------------------- set summary
-@SET_SUMMARY.register("gated_sum", role="primary")
+@SET_SUMMARY.register("gated_sum", role="control")
 class GatedSum(nn.Module):
-    """s <- s + sigmoid(W z + b) * z, starting from zero."""
+    """Control (original research-method design): s <- s + sigmoid(W z + b) * z, from zero."""
 
     def __init__(self, hidden: int):
         super().__init__()
@@ -178,9 +178,9 @@ class GatedMean(nn.Module):
         return self.norm(total / count.clamp(min=1.0)) * (count > 0).to(s.dtype)
 
 
-@SET_SUMMARY.register("none", role="control")
+@SET_SUMMARY.register("none", role="primary")
 class NoSummary(nn.Module):
-    """Ablation: no selected-set summary (actor sees only the feasibility mask)."""
+    """No learned selected-set summary: the controller's mask and micro features carry the set state."""
 
     def __init__(self, hidden: int):
         super().__init__()
