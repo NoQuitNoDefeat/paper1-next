@@ -111,7 +111,59 @@ def run_rows(root: Path) -> list[dict]:
     return rows
 
 
+def pipeline_rows(root: Path) -> list[dict]:
+    """Evaluation pipelines written by tools/confirm.py (``confirm.log`` + output files)."""
+    rows = []
+    for log in sorted(root.rglob("confirm.log")):
+        lines = log.read_text(errors="ignore").splitlines()
+        plan_idx = max((i for i, ln in enumerate(lines) if "evaluations" in ln and "selections" in ln),
+                       default=None)
+        if plan_idx is None:
+            continue
+        words = lines[plan_idx].split()
+        n_sel, n_eval = int(words[2]), int(words[4])
+        start = time.mktime(time.strptime(" ".join(words[:2]), "%Y-%m-%d %H:%M:%S"))
+        after = lines[plan_idx + 1:]
+        started = [ln.split()[-1] for ln in after if " started " in ln]
+        outputs = [p for p in started if p.endswith(".json")]
+        done = sum(1 for p in outputs if Path(p).exists() and Path(p).stat().st_mtime >= start)
+        sel_done = sum(1 for p in started if not p.endswith(".json"))
+        finished = any(" wrote " in ln for ln in after)
+        elapsed = time.time() - start
+        total = n_sel + n_eval
+        progress = done + min(sel_done, n_sel)
+        running = 0 if finished else max(len(started) - progress, 0)
+        eta = elapsed / progress * (total - progress) if progress and not finished else float("nan")
+        rel = log.parent.resolve().relative_to(root.resolve())
+        name = f"{root.resolve().name}/{rel}" if str(rel) in (".", "confirm") else str(rel)
+        rows.append({"name": name,
+                     "state": "完成" if finished else "进行中", "progress": f"{progress}/{total}",
+                     "running": str(running), "elapsed": _fmt_time(elapsed if not finished else float("nan")),
+                     "eta": _fmt_time(eta), "last": (after[-1][11:19] + " " + after[-1][20:].split("/")[-1][:40])
+                     if after else "-"})
+    return rows
+
+
+def _table(head: list[str], body: list[list[str]], right_from: int = 2) -> list[str]:
+    widths = [max(_width(x) for x in col) for col in zip(head, *body)] if body else [_width(h) for h in head]
+    out = ["  ".join(_pad(h, w) for h, w in zip(head, widths)), "  ".join("-" * w for w in widths)]
+    for row in body:
+        out.append("  ".join(_pad(x, w, right=i >= right_from) for i, (x, w) in enumerate(zip(row, widths))))
+    return out
+
+
 def render(root: Path) -> str:
+    text = _render_runs(root)
+    pipes = pipeline_rows(root)
+    if pipes:
+        text += "\n\n评估流水线（tools/confirm.py）\n" + "\n".join(_table(
+            ["流水线", "状态", "进度", "进行中", "已用时间", "预计剩余", "最近事件"],
+            [[r["name"], r["state"], r["progress"], r["running"], r["elapsed"], r["eta"], r["last"]]
+             for r in pipes]))
+    return text
+
+
+def _render_runs(root: Path) -> str:
     rows = run_rows(root)
     head = ["运行", "状态", "迭代", "秒/迭代", "预计剩余", "训练奖励", "解释方差", "熵",
             "dev@迭代", "dev交付率", "dev时延", "1s送达", "错误", "已选", "更新"]
