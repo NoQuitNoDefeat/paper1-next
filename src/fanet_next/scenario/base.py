@@ -55,6 +55,11 @@ class Scenario(ABC):
     def births(self, cycle: int) -> list[Birth]:
         """Packets born in ``(start, end]`` of ``cycle``, sorted by time."""
 
+    def motion_bounds(self) -> tuple[list[float], list[float]]:
+        """Axis-aligned box the nodes move in (specular reflection at its walls)."""
+        pos = np.stack([self.positions(k) for k in range(self.horizon + 1)])
+        return list(pos.min(axis=(0, 1)) - 1.0), list(pos.max(axis=(0, 1)) + 1.0)
+
     def traffic_done(self, cycle: int) -> bool:
         """True when no packet will be born at or after ``cycle``."""
         return False

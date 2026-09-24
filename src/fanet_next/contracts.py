@@ -103,6 +103,7 @@ class CycleFacts:
     restored_from_waiting: int = 0
     rehomed: int = 0
     relay_terminated: int = 0  # terminated packets that were at a relay (not their source)
+    radio_events: dict[str, int] = field(default_factory=dict)  # PHY/MAC trace counts (ns-3)
 
     @property
     def terminated_ids(self) -> list[int]:

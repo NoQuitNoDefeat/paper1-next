@@ -126,6 +126,46 @@ class FullSinr(Constraint):
         return _FullSinrTracker(problem)
 
 
+class _BidirectionalTracker(Tracker):
+    """Full cumulative SINR in both phases of a DATA/ACK transaction.
+
+    DATA phase: senders transmit, each receiver sees the other senders (the primary
+    constraint).  ACK phase: with equal frame sizes and rates the transactions are
+    aligned, so each sender receives its ACK while the other *receivers* send theirs.
+    """
+
+    def __init__(self, problem: SchedulingProblem):
+        from .problem import SchedulingProblem as SP
+
+        self.data = _FullSinrTracker(problem)
+        s, r = problem.links[:, 0], problem.links[:, 1]
+        reverse = SP.__new__(SP)  # same candidates, ACK signal r->s, interference r_a->s_b
+        reverse.links, reverse.gain, reverse.power = problem.links, problem.gain, problem.power
+        reverse.noise, reverse.threshold = problem.noise, problem.threshold
+        reverse.cross = problem.power[r][:, None] * problem.gain[r][:, s]
+        reverse.signal = (problem.power[r] * problem.gain[r, s]) if len(s) else np.zeros(0)
+        np.fill_diagonal(reverse.cross, 0.0)
+        reverse.cross[np.arange(len(s)), np.arange(len(s))] = reverse.signal
+        self.ack = _FullSinrTracker(reverse)
+
+    def mask(self) -> np.ndarray:
+        return self.data.mask() & self.ack.mask()
+
+    def add(self, idx: int) -> None:
+        self.data.add(idx)
+        self.ack.add(idx)
+
+
+@INTERFERENCE.register("full_sinr_bidirectional", role="variant")
+class FullSinrBidirectional(Constraint):
+    """Variant: full cumulative SINR in the DATA phase (at receivers) and ACK phase (at senders)."""
+
+    name = "full_sinr_bidirectional"
+
+    def tracker(self, problem: SchedulingProblem) -> Tracker:
+        return _BidirectionalTracker(problem)
+
+
 class _NewLinkOnlyTracker(_FullSinrTracker):
     def mask(self) -> np.ndarray:
         if self.p.num_candidates == 0:

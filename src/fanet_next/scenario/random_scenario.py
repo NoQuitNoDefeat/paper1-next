@@ -38,6 +38,7 @@ class RandomScenario(Scenario):
 
         lo = np.array([0.0, 0.0, altitude_m[0]])
         hi = np.array([area_m, area_m, altitude_m[1]])
+        self._bounds = (lo.tolist(), hi.tolist())
         pos = lo + rng.random((n, 3)) * (hi - lo)
         theta = rng.uniform(0, 2 * math.pi, n)
         vel = np.stack([speed_mps * np.cos(theta), speed_mps * np.sin(theta),
@@ -87,6 +88,9 @@ class RandomScenario(Scenario):
 
     def traffic_done(self, cycle: int) -> bool:
         return cycle >= self.traffic_stop_cycle
+
+    def motion_bounds(self) -> tuple[list[float], list[float]]:
+        return self._bounds
 
     def describe(self) -> dict:
         d = super().describe()

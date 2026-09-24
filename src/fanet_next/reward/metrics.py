@@ -41,6 +41,7 @@ class MetricsAccumulator:
         self.empty_candidate_cycles = 0
         self.rehomed = 0
         self.relay_terminated = 0
+        self.radio_events: Counter = Counter()
         self.in_system_end = 0
 
     def add(self, facts: CycleFacts, reward: RewardBreakdown, *, n_candidates: int,
@@ -67,6 +68,7 @@ class MetricsAccumulator:
         self.decision_seconds += decision_seconds
         self.rehomed += facts.rehomed
         self.relay_terminated += facts.relay_terminated
+        self.radio_events.update(facts.radio_events)
         self.in_system_end = facts.queued_end + facts.waiting_end
 
     def summary(self) -> dict[str, float]:
@@ -106,6 +108,8 @@ class MetricsAccumulator:
             out[f"reward_{k}_mean"] = v / c
         for k, v in self.terminations.items():
             out[f"term_{k}"] = v
+        for k, v in self.radio_events.items():
+            out[f"radio_{k}"] = v
         return out
 
 

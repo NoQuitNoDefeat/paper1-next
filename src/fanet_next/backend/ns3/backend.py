@@ -17,11 +17,12 @@ from ...scenario.base import Scenario
 from ...scenario.channel import CHANNEL, IdealChannel
 from ...scenario.routing import ROUTING, Routing
 from ..base import BACKEND, Backend
-from .convert import build_episode, facts_from, report_from, result_capacity
+from .convert import (RADIO_PROFILES, build_episode, facts_from, radio_settings, report_from,
+                      result_capacity)
 from .process import DEFAULT_NS3_ROOT, Supervisor, TransportConfig
 from .wire import HEADER, Kind, ProtocolError, decode, encode, encode_value
 
-PROFILES = ("full-sinr-v1", "controlled-budget-v1")
+PROFILES = ("full-sinr-v1", "controlled-budget-v1", *RADIO_PROFILES)
 
 
 def _mib(nbytes: int) -> int:
@@ -30,13 +31,20 @@ def _mib(nbytes: int) -> int:
 
 @BACKEND.register("ns3", role="variant")
 class Ns3Backend(Backend):
-    """ns-3.48 fanet-scheduler bridge (wire v2); synchronous boundaries, frozen CSI profile."""
+    """ns-3.48 fanet-scheduler bridge (wire v2): frozen-CSI ledger or PHY radio (DATA/ACK, motion).
+
+    Profiles: ``full-sinr-v1`` (cumulative SINR on observed gains, no PHY),
+    ``ideal-spectrum-v1`` (spectrum PHY, ideal confirmation) and ``transaction-ack-v1``
+    (spectrum PHY with DATA/ACK transactions; ``motion=True`` adds continuous motion
+    with per-reception quasi-static gains).  Radio options go to ``radio``.
+    """
 
     supports_state = False
 
     def __init__(self, channel: dict | str = "ideal", routing: dict | str = "min_hop",
                  stale_queue_policy: str = "rehome", waiting_restore: str = "keep",
-                 execution_profile: str = "full-sinr-v1", ns3_root: str | None = None,
+                 execution_profile: str = "full-sinr-v1", motion: bool = False,
+                 radio: dict | None = None, ns3_root: str | None = None,
                  timeout_seconds: float = 60.0):
         self.channel = CHANNEL.build(channel)
         if not isinstance(self.channel, IdealChannel):
@@ -49,6 +57,10 @@ class Ns3Backend(Backend):
         if execution_profile not in PROFILES:
             raise ValueError(f"execution_profile must be one of {PROFILES}")
         self.profile = execution_profile
+        if motion and execution_profile != "transaction-ack-v1":
+            raise ValueError("motion requires execution_profile = transaction-ack-v1")
+        self.motion = bool(motion)
+        self.radio_options = dict(radio or {})
         self.ns3_root = ns3_root
         self.timeout = float(timeout_seconds)
         self._sup: Supervisor | None = None
@@ -83,7 +95,10 @@ class Ns3Backend(Backend):
               seed: int = 0) -> Report:
         self.close()
         self.run_id, self.episode = run_id, episode
-        self._ep = build_episode(scenario, self.routing, execution_profile=self.profile)
+        wireless = (radio_settings(scenario, self.profile, motion=self.motion, **self.radio_options)
+                    if self.profile in RADIO_PROFILES else None)
+        self._ep = build_episode(scenario, self.routing, execution_profile=self.profile,
+                                 wireless=wireless)
         self._ep.payload["config"].update(self.semantics)
         body = encode_value(self._ep.payload, limit=1 << 30)
         physical = max(len(encode_value(p)) for p in self._ep.payload["physical_inputs"])
@@ -133,7 +148,7 @@ class Ns3Backend(Backend):
             if body.get("timing") != timing:
                 raise ProtocolError("result timing mismatch")
             cycle = body["cycle"]
-            facts = facts_from(cycle, self._ep, k)
+            facts = facts_from(cycle, self._ep, k, body.get("radio"))
             self._obs = cycle["next_observation"]
             self.cycle = k + 1
             self.report = report_from(self._obs, self._ep, run_id=self.run_id,

@@ -56,7 +56,42 @@ def _routes(next_hop: np.ndarray) -> list[dict]:
             for u in range(n) for d in range(n) if u != d]
 
 
-def build_episode(scenario: Scenario, routing: Routing, *, execution_profile: str) -> Episode:
+RADIO_PROFILES = ("ideal-spectrum-v1", "transaction-ack-v1")
+MOTION_PROFILE = "continuous-motion-frame-quasistatic-v1"
+
+
+def radio_settings(scenario: Scenario, profile: str, *, motion: bool, center_hz: float = 2.4e9,
+                   bandwidth_hz: float | None = None, propagation_ns: int = 1000,
+                   overhead_bytes: int = 24, ack_bytes: int = 24,
+                   ack_rate_bytes_per_second: int | None = None, turnaround_ns: int = 16_000) -> dict:
+    """Physical-layer settings consistent with the planning model.
+
+    The Shannon PHY decodes when rate <= B log2(1 + SINR); the default bandwidth makes
+    the planning SINR threshold exactly the decoding threshold of the single MCS.
+    """
+    radio = scenario.radio
+    rate = int(radio.rate_bps // 8)
+    if bandwidth_hz is None:
+        bandwidth_hz = 8.0 * rate / float(np.log2(1.0 + radio.threshold))
+    settings = {"profile": profile, "center_hz": float(center_hz), "bandwidth_hz": float(bandwidth_hz),
+                "propagation_ns": int(propagation_ns), "overhead_bytes": int(overhead_bytes)}
+    if profile == "transaction-ack-v1":
+        settings.update(ack_bytes=int(ack_bytes), turnaround_ns=int(turnaround_ns),
+                        ack_rate_bytes_per_second=int(ack_rate_bytes_per_second or rate))
+    if motion:
+        if profile != "transaction-ack-v1":
+            raise ValueError("the moving channel requires actual ACKs (transaction-ack-v1)")
+        low, high = scenario.motion_bounds()
+        settings["motion"] = {"profile": MOTION_PROFILE, "low_m": [float(x) for x in low],
+                              "high_m": [float(x) for x in high],
+                              "reference_distance_m": float(radio.min_distance_m),
+                              "path_loss_exponent": float(radio.pathloss_exponent),
+                              "sinr_threshold": float(radio.threshold)}
+    return settings
+
+
+def build_episode(scenario: Scenario, routing: Routing, *, execution_profile: str,
+                  wireless: dict | None = None) -> Episode:
     sc, radio = scenario, scenario.radio
     n, horizon, ps = sc.num_nodes, sc.horizon, sc.packet_size
     period_ns = int(round(sc.cycle_length * NS))
@@ -139,7 +174,10 @@ def build_episode(scenario: Scenario, routing: Routing, *, execution_profile: st
                "physical_inputs": [physical(k) for k in range(horizon + 1)],
                "metadata": dict.fromkeys(("feature_schema_sha256", "history_sha256",
                                           "reward_sha256", "checkpoint_sha256"))}
-    if execution_profile != "controlled-budget-v1":
+    if wireless is not None:
+        # private execution channel: the truth; with the ideal estimate it equals the observation
+        payload["wireless"] = {**wireless, "frames": [physical(k) for k in range(horizon + 1)]}
+    elif execution_profile != "controlled-budget-v1":
         payload["execution_profile"] = execution_profile
     return Episode(payload=payload, period_ns=period_ns, horizon=horizon, packet_size=ps,
                    qlinks=qlinks, positions=positions, velocities=velocities, gains=gains,
@@ -148,7 +186,7 @@ def build_episode(scenario: Scenario, routing: Routing, *, execution_profile: st
 
 
 def result_capacity(payload: dict, physical_bytes: int) -> int:
-    """Mirror of the C++ ``RequiredResultCapacity`` (no radio/motion/control terms)."""
+    """Mirror of the C++ ``RequiredResultCapacity`` (radio and motion terms; no control)."""
     c, beyond = payload["config"], 100_001
     ps = c["packet_size_bytes"]
     frames = payload["trajectory"]["frames"]
@@ -159,7 +197,14 @@ def result_capacity(payload: dict, physical_bytes: int) -> int:
     packets = min(lifetime, min(beyond, slots + peak))
     routes = {(r["node_id"], r["destination"]) for r in payload["initial"]["routes"]}
     routes.update((r["node_id"], r["destination"]) for f in frames for r in f["route_updates"])
-    return (16384 + physical_bytes + 4500 * packets + 1500 * len(c["queues"])
+    radio = payload.get("wireless")
+    extra = 0
+    if radio is not None:
+        links = len(c["node_ids"]) // 2
+        extra = ((3200 if radio["profile"] == "transaction-ack-v1" else 2000) * packets
+                 + 512 * len(c["queues"]) + 4096 + 256 * links * links)
+        extra += 1000 * packets if "motion" in radio else 0
+    return (16384 + extra + physical_bytes + 4500 * packets + 1500 * len(c["queues"])
             + 1000 * len(c["waiting_areas"]) + 150 * len(routes) + 20 * len(c["node_ids"]))
 
 
@@ -199,7 +244,7 @@ def report_from(obs: dict, ep: Episode, *, run_id: str, episode: int) -> Report:
         waiting_max_wait=waiting[0]["max_wait_ns"] / NS if waiting else 0.0)
 
 
-def facts_from(cycle: dict, ep: Episode, k: int) -> CycleFacts:
+def facts_from(cycle: dict, ep: Episode, k: int, radio: dict | None = None) -> CycleFacts:
     ps = ep.packet_size
     planned = tuple((int(a), int(b)) for a, b in cycle["action"]["links"])
     served_p = np.array([len(s["packet_ids"]) for s in cycle["services"]], dtype=np.int64)
@@ -237,4 +282,12 @@ def facts_from(cycle: dict, ep: Episode, k: int) -> CycleFacts:
                                   for e in events),
         rehomed=sum(e["origin"] == "rehome" for e in events
                     if e["kind"] in ("queue_admit", "wait_admit", "terminal")),
-        relay_terminated=relay_terminated)
+        relay_terminated=relay_terminated,
+        radio_events=_count_kinds(radio["events"]) if radio else {})
+
+
+def _count_kinds(events: list[dict]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for e in events:
+        out[e["kind"]] = out.get(e["kind"], 0) + 1
+    return out
