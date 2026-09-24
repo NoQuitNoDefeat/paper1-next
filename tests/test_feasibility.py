@@ -123,3 +123,19 @@ def test_every_registered_constraint_keeps_resources_and_terminates():
                     c.step(int(np.nonzero(c.mask)[0][0]))
                 nodes = p.links[c.selected].flatten()
                 assert len(nodes) == len(set(nodes)), name
+
+
+def test_candidate_features_hand_computed():
+    # P = N0 = 1, signal 10, cross 4, threshold 1.5 (same scene as the cumulative test)
+    p = toy_problem(LINKS, three_link_gain(4.0), threshold=1.5)
+    c = controller(p)
+    f = c.candidate_features()
+    assert f[:, 0] == pytest.approx(np.log10(10 / 1.5))  # own margin dB/10, nothing selected
+    assert np.all(f[:, 1] == 0) and np.all(f[:, 2] == 0)
+    assert f[:, 3] == pytest.approx(4 / (10 / 1.5 - 1))  # mean relative interference on others
+    c.step(0)
+    f = c.candidate_features()
+    assert np.all(f[0] == 0)  # selected / unselectable rows carry nothing
+    assert f[1, 0] == pytest.approx(np.log10((10 / 5) / 1.5))  # SINR 10/(1+4) = 2
+    assert f[1, 1] == pytest.approx(4 / (10 / 1.5 - 1))  # share of link 0's budget
+    assert f[1, 2] == pytest.approx(1.0)  # adding 1 would make 2 infeasible

@@ -1,0 +1,46 @@
+{
+  "name": "E8 摘要改进（默认场景，排空 250）",
+  "out": "results/e8/confirm_default",
+  "eval": {
+    "split": "dev",
+    "seed_offset": 16,
+    "episodes": 32,
+    "drain": 250,
+    "threads": 3
+  },
+  "variants": {
+    "default": []
+  },
+  "baseline_config": "configs/protocol_a20.toml",
+  "baselines": [
+    "longest_queue",
+    "hol_weighted"
+  ],
+  "fixed": {},
+  "groups": {
+    "完整模型（门控求和）": [
+      "results/e5/A-lv20-s0",
+      "results/e5/A-lv20-s1",
+      "results/e5/A-lv20-s2"
+    ],
+    "无摘要": [
+      "results/e6/no_set_summary-s0",
+      "results/e6/no_set_summary-s1",
+      "results/e6/no_set_summary-s2"
+    ],
+    "归一化摘要": [
+      "results/e8/summary_gated_mean-s0",
+      "results/e8/summary_gated_mean-s1",
+      "results/e8/summary_gated_mean-s2"
+    ],
+    "控制器动态特征": [
+      "results/e8/summary_controller_dyn-s0",
+      "results/e8/summary_controller_dyn-s1",
+      "results/e8/summary_controller_dyn-s2"
+    ]
+  },
+  "compare": [
+    "无摘要",
+    "longest_queue"
+  ]
+}

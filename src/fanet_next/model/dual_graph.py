@@ -6,8 +6,11 @@ evaluation) relies on; it never touches layer names or hidden sizes:
 * ``encode(batch)`` once per cycle -> :class:`Encoding`
 * ``init_state(enc)`` / ``update_state(enc, state, chosen, active)`` — opaque
   selected-set state, recomputed from the action prefix during PPO updates
-* ``logits(enc, state)`` -> (B, Cmax) unmasked candidate scores
-* ``value(enc, state, remaining, micro)`` -> (B,) micro-state value
+* ``logits(enc, state, dyn)`` -> (B, Cmax) unmasked candidate scores
+* ``value(enc, state, remaining, micro, dyn)`` -> (B,) micro-state value
+
+``dyn`` (B, Cmax, F) holds the controller's per-candidate micro-state features
+(``MicroStepController.candidate_features``); models may ignore it.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from torch import nn
 
 from ..observation.graph import FeatureSchema, GraphBatch
 from ..registry import slot
-from ..scheduling.controller import MICRO_FEATURE_DIM
+from ..scheduling.controller import CANDIDATE_FEATURE_DIM, MICRO_FEATURE_DIM
 from .components import (ACTOR_HEAD, COMM_ENCODER, CRITIC_HEAD, INTERACTION_ENCODER, LIFT,
                          SET_SUMMARY, Readout)
 
@@ -47,10 +50,11 @@ class SchedulingModel(nn.Module):
     def update_state(self, enc: Encoding, state, chosen: torch.Tensor, active: torch.Tensor): ...
 
     @abstractmethod
-    def logits(self, enc: Encoding, state) -> torch.Tensor: ...
+    def logits(self, enc: Encoding, state, dyn: torch.Tensor) -> torch.Tensor: ...
 
     @abstractmethod
-    def value(self, enc: Encoding, state, remaining: torch.Tensor, micro: torch.Tensor) -> torch.Tensor: ...
+    def value(self, enc: Encoding, state, remaining: torch.Tensor, micro: torch.Tensor,
+              dyn: torch.Tensor) -> torch.Tensor: ...
 
 
 class Trunk(nn.Module):
@@ -74,9 +78,14 @@ class Trunk(nn.Module):
 
 @MODEL.register("dual_graph", role="primary")
 class DualGraphModel(SchedulingModel):
-    """Dual-graph encoder, gated-sum set summary, MLP actor/critic; trunk optionally shared."""
+    """Dual-graph encoder, gated-sum set summary, MLP actor/critic; trunk optionally shared.
+
+    ``candidate_dynamics=True`` adds a projection of the controller's per-candidate
+    micro-state features to every candidate embedding at every micro step.
+    """
 
     def __init__(self, schema: FeatureSchema, hidden: int = 64, share_trunk: bool = True,
+                 candidate_dynamics: bool = False,
                  comm_encoder: dict | str = "mpnn", lift: dict | str = "concat",
                  interaction_encoder: dict | str = "mpnn", set_summary: dict | str = "gated_sum",
                  actor_head: dict | str = "mlp", critic_head: dict | str = "mlp"):
@@ -93,6 +102,9 @@ class DualGraphModel(SchedulingModel):
         self.actor = ACTOR_HEAD.build(actor_head, link_dim=hidden, state_dim=sd, ctx_dim=hidden)
         self.critic = CRITIC_HEAD.build(critic_head, link_dim=hidden, state_dim=sd, ctx_dim=hidden,
                                         micro_dim=MICRO_FEATURE_DIM)
+        self.dyn_actor = nn.Linear(CANDIDATE_FEATURE_DIM, hidden) if candidate_dynamics else None
+        self.dyn_critic = (None if not candidate_dynamics else
+                           self.dyn_actor if share_trunk else nn.Linear(CANDIDATE_FEATURE_DIM, hidden))
 
     def encode(self, batch: GraphBatch) -> Encoding:
         za, ca = self.actor_trunk(batch)
@@ -112,8 +124,11 @@ class DualGraphModel(SchedulingModel):
             return (sa, sa)
         return (sa, self.summary_c.update(state[1], enc.z_critic[rows, idx], active))
 
-    def logits(self, enc: Encoding, state) -> torch.Tensor:
-        return self.actor(enc.z_actor, state[0], enc.ctx_actor)
+    def logits(self, enc: Encoding, state, dyn) -> torch.Tensor:
+        z = enc.z_actor if self.dyn_actor is None else enc.z_actor + self.dyn_actor(dyn)
+        return self.actor(z, self.summary_a.read(state[0]), enc.ctx_actor)
 
-    def value(self, enc: Encoding, state, remaining, micro) -> torch.Tensor:
-        return self.critic(enc.z_critic, enc.valid, remaining, state[1], enc.ctx_critic, micro)
+    def value(self, enc: Encoding, state, remaining, micro, dyn) -> torch.Tensor:
+        z = enc.z_critic if self.dyn_critic is None else enc.z_critic + self.dyn_critic(dyn)
+        return self.critic(z, enc.valid, remaining, self.summary_c.read(state[1]), enc.ctx_critic,
+                           micro)

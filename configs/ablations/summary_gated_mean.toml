@@ -1,0 +1,6 @@
+# 摘要改进方案 1：归一化摘要（已选链路门控嵌入取平均 + LayerNorm，空集为 0）
+extends = "../protocol_a20.toml"
+name = "var-summary-gated-mean"
+
+[model]
+set_summary = { type = "gated_mean" }

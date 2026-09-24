@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from ..observation.graph import DualGraph, batch_graphs
-from ..scheduling.controller import MICRO_FEATURE_DIM
+from ..scheduling.controller import CANDIDATE_FEATURE_DIM, MICRO_FEATURE_DIM
 from .dual_graph import SchedulingModel
 
 
@@ -46,6 +46,7 @@ class MicroRecord:
     logp: np.ndarray  # (k,) float32
     values: np.ndarray  # (k+1,) float32
     micro: np.ndarray  # (k+1, F) float32
+    cand_dyn: np.ndarray | None = None  # (k+1, C, F_dyn) controller per-candidate features
 
     @property
     def num_actions(self) -> int:
@@ -63,26 +64,30 @@ def sample(model: SchedulingModel, inputs, *, mode: str = "sample",
     state = model.init_state(enc)
     b_n, c_max = enc.valid.shape
     n_cand = [g.num_candidates for g in graphs]
-    rec = [dict(masks=[], actions=[], logp=[], values=[], micro=[]) for _ in inputs]
+    rec = [dict(masks=[], actions=[], logp=[], values=[], micro=[], dyn=[]) for _ in inputs]
     finished = np.zeros(b_n, dtype=bool)
     while True:
         mask = np.zeros((b_n, c_max), dtype=bool)
         micro = np.zeros((b_n, MICRO_FEATURE_DIM), dtype=np.float32)
+        dyn = np.zeros((b_n, c_max, CANDIDATE_FEATURE_DIM), dtype=np.float32)
         for b, inp in enumerate(inputs):
             if not finished[b]:
                 mask[b, : n_cand[b]] = inp.controller.mask
                 micro[b] = inp.controller.micro_features()
+                dyn[b, : n_cand[b]] = inp.controller.candidate_features()
         mask_t = torch.as_tensor(mask, device=device)
-        v = model.value(enc, state, mask_t, torch.as_tensor(micro, device=device)).cpu().numpy()
+        dyn_t = torch.as_tensor(dyn, device=device)
+        v = model.value(enc, state, mask_t, torch.as_tensor(micro, device=device), dyn_t).cpu().numpy()
         active = mask.any(1) & ~finished
         for b in np.nonzero(~finished)[0]:
             rec[b]["masks"].append(mask[b, : n_cand[b]].copy())
             rec[b]["values"].append(v[b])
             rec[b]["micro"].append(micro[b])
+            rec[b]["dyn"].append(dyn[b, : n_cand[b]].copy())
         finished |= ~active
         if not active.any():
             break
-        logp_all = masked_log_softmax(model.logits(enc, state), mask_t)
+        logp_all = masked_log_softmax(model.logits(enc, state, dyn_t), mask_t)
         rows = torch.as_tensor(np.nonzero(active)[0], device=device)
         if mode == "greedy":
             a = logp_all[rows].argmax(-1)
@@ -104,7 +109,9 @@ def sample(model: SchedulingModel, inputs, *, mode: str = "sample",
             actions=np.array(r["actions"], dtype=np.int64),
             logp=np.array(r["logp"], dtype=np.float32),
             values=np.array(r["values"], dtype=np.float32),
-            micro=np.array(r["micro"], dtype=np.float32).reshape(-1, MICRO_FEATURE_DIM)))
+            micro=np.array(r["micro"], dtype=np.float32).reshape(-1, MICRO_FEATURE_DIM),
+            cand_dyn=np.array(r["dyn"], dtype=np.float32).reshape(len(r["dyn"]), c,
+                                                                   CANDIDATE_FEATURE_DIM)))
     return out
 
 
@@ -117,12 +124,15 @@ def initial_values(model: SchedulingModel, inputs, device: str = "cpu") -> np.nd
     b_n, c_max = enc.valid.shape
     mask = np.zeros((b_n, c_max), dtype=bool)
     micro = np.zeros((b_n, MICRO_FEATURE_DIM), dtype=np.float32)
+    dyn = np.zeros((b_n, c_max, CANDIDATE_FEATURE_DIM), dtype=np.float32)
     for b, inp in enumerate(inputs):
         m = inp.controller.mask
         mask[b, : len(m)] = m
         micro[b] = inp.controller.micro_features()
+        dyn[b, : len(m)] = inp.controller.candidate_features()
     return model.value(enc, state, torch.as_tensor(mask, device=device),
-                       torch.as_tensor(micro, device=device)).cpu().numpy()
+                       torch.as_tensor(micro, device=device),
+                       torch.as_tensor(dyn, device=device)).cpu().numpy()
 
 
 @dataclass
@@ -144,22 +154,26 @@ def replay(model: SchedulingModel, records: list[MicroRecord], device: str = "cp
     masks = np.zeros((b_n, k_max + 1, c_max), dtype=bool)
     micro = np.zeros((b_n, k_max + 1, MICRO_FEATURE_DIM), dtype=np.float32)
     actions = np.zeros((b_n, max(k_max, 1)), dtype=np.int64)
+    dyn = np.zeros((b_n, k_max + 1, c_max, CANDIDATE_FEATURE_DIM), dtype=np.float32)
     for b, r in enumerate(records):
         c = r.graph.num_candidates
         masks[b, : k[b] + 1, :c] = r.masks
         micro[b, : k[b] + 1] = r.micro
         actions[b, : k[b]] = r.actions
+        if r.cand_dyn is not None:
+            dyn[b, : k[b] + 1, :c] = r.cand_dyn
     masks_t = torch.as_tensor(masks, device=device)
     micro_t = torch.as_tensor(micro, device=device)
     actions_t = torch.as_tensor(actions, device=device)
+    dyn_t = torch.as_tensor(dyn, device=device)
     k_t = torch.as_tensor(k, device=device)
     values, logps, ents = [], [], []
     for j in range(k_max + 1):
-        values.append(model.value(enc, state, masks_t[:, j], micro_t[:, j]))
+        values.append(model.value(enc, state, masks_t[:, j], micro_t[:, j], dyn_t[:, j]))
         if j == k_max:
             break
         act = j < k_t
-        logp_all = masked_log_softmax(model.logits(enc, state), masks_t[:, j])
+        logp_all = masked_log_softmax(model.logits(enc, state, dyn_t[:, j]), masks_t[:, j])
         a = actions_t[:, j]
         logps.append(torch.where(act, logp_all.gather(1, a[:, None]).squeeze(1),
                                  torch.zeros_like(a, dtype=logp_all.dtype)))

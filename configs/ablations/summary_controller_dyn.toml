@@ -1,0 +1,8 @@
+# 摘要改进方案 2：去掉学习式摘要，改由控制器逐步提供每条候选链路的动态特征
+# （当前已选集合下的自身 SINR 余量、对已选链路余量的占用、会淘汰的候选比例、对其余候选的干扰）
+extends = "../protocol_a20.toml"
+name = "var-summary-controller-dyn"
+
+[model]
+set_summary = { type = "none" }
+candidate_dynamics = true

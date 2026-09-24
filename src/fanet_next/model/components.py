@@ -151,6 +151,32 @@ class GatedSum(nn.Module):
         new = s + torch.sigmoid(self.gate(z_chosen)) * z_chosen
         return torch.where(active.unsqueeze(-1), new, s)
 
+    def read(self, s):
+        return s
+
+
+@SET_SUMMARY.register("gated_mean", role="variant")
+class GatedMean(nn.Module):
+    """Normalised summary: LayerNorm(mean of sigmoid(W z + b) * z over selected links); zero when empty."""
+
+    def __init__(self, hidden: int):
+        super().__init__()
+        self.gate = nn.Linear(hidden, hidden)
+        self.norm = nn.LayerNorm(hidden)
+        self.out_dim = hidden
+
+    def init(self, batch: int, like: torch.Tensor) -> torch.Tensor:
+        return like.new_zeros(batch, self.out_dim + 1)  # running sum and count
+
+    def update(self, s, z_chosen, active):
+        add = torch.cat([torch.sigmoid(self.gate(z_chosen)) * z_chosen,
+                         torch.ones_like(z_chosen[:, :1])], -1)
+        return torch.where(active.unsqueeze(-1), s + add, s)
+
+    def read(self, s):
+        total, count = s[:, :-1], s[:, -1:]
+        return self.norm(total / count.clamp(min=1.0)) * (count > 0).to(s.dtype)
+
 
 @SET_SUMMARY.register("none", role="control")
 class NoSummary(nn.Module):
@@ -164,6 +190,9 @@ class NoSummary(nn.Module):
         return like.new_zeros(batch, 1)
 
     def update(self, s, z_chosen, active):
+        return s
+
+    def read(self, s):
         return s
 
 

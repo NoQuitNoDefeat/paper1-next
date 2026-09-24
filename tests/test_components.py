@@ -79,13 +79,13 @@ VARIANTS = ([("comm_encoder", n) for n in COMM_ENCODER.names()]
             + [("lift", n) for n in LIFT.names()]
             + [("interaction_encoder", n) for n in INTERACTION_ENCODER.names()]
             + [("set_summary", n) for n in SET_SUMMARY.names()]
-            + [("share_trunk", False)])
+            + [("share_trunk", False), ("candidate_dynamics", True)])
 
 
 @pytest.mark.parametrize("key,value", VARIANTS)
 def test_every_model_variant_samples_replays_and_trains(key, value):
     model_cfg = dict(CFG["model"])
-    model_cfg[key] = value if key == "share_trunk" else {"type": value}
+    model_cfg[key] = value if key in ("share_trunk", "candidate_dynamics") else {"type": value}
     cfg = {**CFG, "model": model_cfg}
     torch.manual_seed(0)
     model = build_model(cfg, feature_schema(cfg))

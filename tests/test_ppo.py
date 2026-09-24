@@ -60,7 +60,7 @@ def test_summary_depends_on_action_prefix():
     from dataclasses import replace
     alt = replace(rec.micro, actions=a[1:2], masks=rec.micro.masks[[0, -1]],
                   micro=rec.micro.micro[[0, -1]], logp=rec.micro.logp[1:2],
-                  values=rec.micro.values[[0, -1]])
+                  values=rec.micro.values[[0, -1]], cand_dyn=rec.micro.cand_dyn[[0, -1]])
     other = replay(model, [alt]).logp[0, 0].item()
     assert base != pytest.approx(other)
 

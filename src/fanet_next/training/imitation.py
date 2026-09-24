@@ -17,7 +17,7 @@ from ..contracts import EndType
 from ..loop import SchedulingEnv
 from ..model.runner import MicroRecord, replay
 from ..policy.base import Policy
-from ..scheduling.controller import MICRO_FEATURE_DIM
+from ..scheduling.controller import CANDIDATE_FEATURE_DIM, MICRO_FEATURE_DIM
 from .advantages import compute_stream_advantages
 from .records import CUT, CycleRecord
 
@@ -34,18 +34,22 @@ def teacher_records(envs: list[SchedulingEnv], teacher: Policy, seeds: list[int]
         outs = teacher.act(inputs, mode="greedy")
         for e, (env, inp, out) in enumerate(zip(envs, inputs, outs)):
             ctl = env.constraints.start(inp.problem)
-            masks, micro = [], []
+            masks, micro, dyn = [], [], []
             for a in out.actions:
                 masks.append(ctl.mask)
                 micro.append(ctl.micro_features())
+                dyn.append(ctl.candidate_features())
                 ctl.step(a)
             masks.append(ctl.mask)
             micro.append(ctl.micro_features())
+            dyn.append(ctl.candidate_features())
             k = len(out.actions)
             rec = MicroRecord(graph=inp.graph, masks=np.array(masks, bool).reshape(k + 1, -1),
                               actions=np.array(out.actions, np.int64),
                               logp=np.zeros(k, np.float32), values=np.zeros(k + 1, np.float32),
-                              micro=np.array(micro, np.float32).reshape(k + 1, MICRO_FEATURE_DIM))
+                              micro=np.array(micro, np.float32).reshape(k + 1, MICRO_FEATURE_DIM),
+                              cand_dyn=np.array(dyn, np.float32).reshape(
+                                  k + 1, inp.problem.num_candidates, CANDIDATE_FEATURE_DIM))
             tr = env.step(out.actions)
             streams[e].append(CycleRecord(micro=rec, reward=tr.reward.total,
                                           raw_reward=tr.reward.total, end=tr.end.value))
