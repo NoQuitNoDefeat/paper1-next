@@ -1,0 +1,3 @@
+repository=https://gitlab.com/nsnam/ns-3-dev.git
+ref=ns-3.48
+commit=d2add90b452d600cfb4859baed8e9ea633519447

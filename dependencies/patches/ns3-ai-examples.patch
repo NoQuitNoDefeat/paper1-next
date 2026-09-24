@@ -1,0 +1,438 @@
+diff --git a/examples/lte-cqi/use-msg/my-rr-sched.cc b/examples/lte-cqi/use-msg/my-rr-sched.cc
+index a7d2085..5f55692 100644
+--- a/examples/lte-cqi/use-msg/my-rr-sched.cc
++++ b/examples/lte-cqi/use-msg/my-rr-sched.cc
+@@ -57,7 +57,7 @@ MyRrMacScheduler::MyRrMacScheduler()
+       m_nextRntiDl(0),
+       m_nextRntiUl(0)
+ {
+-    m_cqiDl = Create<CQIDL>();
++    m_cqiDl = CreateObject<CQIDL>();
+     m_amc = CreateObject<LteAmc>();
+     m_cschedSapProvider = new MemberCschedSapProvider<MyRrMacScheduler>(this);
+     m_schedSapProvider = new MemberSchedSapProvider<MyRrMacScheduler>(this);
+diff --git a/examples/rl-tcp/README.md b/examples/rl-tcp/README.md
+index 8e4cc2d..ef95ba5 100644
+--- a/examples/rl-tcp/README.md
++++ b/examples/rl-tcp/README.md
+@@ -10,7 +10,11 @@ and smaller delay.
+ ### Cmake targets
+ 
+ - `ns3ai_rltcp_gym`: RL-TCP example using Gym interface.
+-- `ns3ai_rltcp_msg`: RL-TCP example using vector-based message interface.
++- `ns3ai_rltcp_msg`: RL-TCP example using struct-based message interface.
++
++The message example uses `SetUseVector(false)` and exchanges `TcpRlEnv` / `TcpRlAct`
++structures. For vector allocation and bindings, see
++[A-Plus-B's vector example](../a-plus-b/use-msg-vec).
+ 
+ ## Algorithms
+ 
+@@ -89,7 +93,7 @@ cd contrib/ai/examples/rl-tcp/use-gym
+ python run_rl_tcp.py --use_rl --result --show_log --seed=10
+ ```
+ 
+-### Message interface (vector-based)
++### Message interface (struct-based)
+ 
+ 1. [Setup ns3-ai](../../docs/install.md)
+ 2. Build C++ executable & Python bindings
+diff --git a/examples/rl-tcp/pure-cpp/tcp-rl.cc b/examples/rl-tcp/pure-cpp/tcp-rl.cc
+index 9cba81c..ba2c417 100644
+--- a/examples/rl-tcp/pure-cpp/tcp-rl.cc
++++ b/examples/rl-tcp/pure-cpp/tcp-rl.cc
+@@ -26,6 +26,7 @@
+ #include "ns3/log.h"
+ #include "ns3/node-list.h"
+ #include "ns3/object.h"
++#include "ns3/pointer.h"
+ #include "ns3/simulator.h"
+ #include "ns3/tcp-header.h"
+ #include "ns3/tcp-l4-protocol.h"
+@@ -36,38 +37,6 @@ namespace ns3
+ 
+ NS_LOG_COMPONENT_DEFINE("tcp-rl-purecpp");
+ 
+-NS_OBJECT_ENSURE_REGISTERED(TcpSocketDerived);
+-
+-TypeId
+-TcpSocketDerived::GetTypeId()
+-{
+-    static TypeId tid = TypeId("ns3::TcpSocketDerived")
+-                            .SetParent<TcpSocketBase>()
+-                            .SetGroupName("Internet")
+-                            .AddConstructor<TcpSocketDerived>();
+-    return tid;
+-}
+-
+-TypeId
+-TcpSocketDerived::GetInstanceTypeId() const
+-{
+-    return TcpSocketDerived::GetTypeId();
+-}
+-
+-TcpSocketDerived::TcpSocketDerived()
+-{
+-}
+-
+-Ptr<TcpCongestionOps>
+-TcpSocketDerived::GetCongestionControlAlgorithm()
+-{
+-    return m_congestionControl;
+-}
+-
+-TcpSocketDerived::~TcpSocketDerived()
+-{
+-}
+-
+ /////////////////////////////////////////////////////////////////////////
+ 
+ NS_OBJECT_ENSURE_REGISTERED(TcpRlTimeBased);
+@@ -95,7 +64,7 @@ TypeId
+ TcpRlTimeBased::GetTypeId()
+ {
+     static TypeId tid = TypeId("ns3::TcpRlTimeBased")
+-                            .SetParent<TcpSocketBase>()
++                            .SetParent<TcpCongestionOps>()
+                             .AddConstructor<TcpRlTimeBased>()
+                             .SetGroupName("Internet");
+     return tid;
+@@ -148,8 +117,14 @@ TcpRlTimeBased::ConnectSocketCallbacks()
+                 continue;
+             }
+ 
+-            Ptr<TcpSocketDerived> dtcpSocket = StaticCast<TcpSocketDerived>(tcpSocket);
+-            Ptr<TcpCongestionOps> ca = dtcpSocket->GetCongestionControlAlgorithm();
++            // Read the real socket's algorithm through its public attribute.
++            PointerValue congestionOps;
++            tcpSocket->GetAttribute("CongestionOps", congestionOps);
++            Ptr<TcpCongestionOps> ca = congestionOps.Get<TcpCongestionOps>();
++            if (!ca)
++            {
++                continue;
++            }
+             NS_LOG_DEBUG("CA name: " << ca->GetName());
+             Ptr<TcpRlTimeBased> rlCa = DynamicCast<TcpRlTimeBased>(ca);
+             if (rlCa == this)
+@@ -265,7 +240,7 @@ TypeId
+ TcpRlEventBased::GetTypeId()
+ {
+     static TypeId tid = TypeId("ns3::TcpRlEventBased")
+-                            .SetParent<TcpSocketBase>()
++                            .SetParent<TcpCongestionOps>()
+                             .AddConstructor<TcpRlEventBased>()
+                             .SetGroupName("Internet");
+     return tid;
+@@ -408,8 +383,14 @@ TcpRlEventBased::ConnectSocketCallbacks()
+                 continue;
+             }
+ 
+-            Ptr<TcpSocketDerived> dtcpSocket = StaticCast<TcpSocketDerived>(tcpSocket);
+-            Ptr<TcpCongestionOps> ca = dtcpSocket->GetCongestionControlAlgorithm();
++            // Read the real socket's algorithm through its public attribute.
++            PointerValue congestionOps;
++            tcpSocket->GetAttribute("CongestionOps", congestionOps);
++            Ptr<TcpCongestionOps> ca = congestionOps.Get<TcpCongestionOps>();
++            if (!ca)
++            {
++                continue;
++            }
+             NS_LOG_DEBUG("CA name: " << ca->GetName());
+             Ptr<TcpRlEventBased> rlCa = DynamicCast<TcpRlEventBased>(ca);
+             if (rlCa == this)
+diff --git a/examples/rl-tcp/pure-cpp/tcp-rl.h b/examples/rl-tcp/pure-cpp/tcp-rl.h
+index 1995d45..cf8691e 100644
+--- a/examples/rl-tcp/pure-cpp/tcp-rl.h
++++ b/examples/rl-tcp/pure-cpp/tcp-rl.h
+@@ -34,19 +34,6 @@ namespace ns3
+ class TcpSocketBase;
+ class Time;
+ 
+-// used to get pointer to Congestion Algorithm
+-class TcpSocketDerived : public TcpSocketBase
+-{
+-  public:
+-    static TypeId GetTypeId();
+-    TypeId GetInstanceTypeId() const override;
+-
+-    TcpSocketDerived();
+-    ~TcpSocketDerived() override;
+-
+-    Ptr<TcpCongestionOps> GetCongestionControlAlgorithm();
+-};
+-
+ class TcpRlTimeBased : public TcpCongestionOps
+ {
+   public:
+diff --git a/examples/rl-tcp/use-gym/tcp-rl.cc b/examples/rl-tcp/use-gym/tcp-rl.cc
+index 49acab7..eac1480 100644
+--- a/examples/rl-tcp/use-gym/tcp-rl.cc
++++ b/examples/rl-tcp/use-gym/tcp-rl.cc
+@@ -26,6 +26,7 @@
+ #include "ns3/log.h"
+ #include "ns3/node-list.h"
+ #include "ns3/object.h"
++#include "ns3/pointer.h"
+ #include "ns3/simulator.h"
+ #include "ns3/tcp-header.h"
+ #include "ns3/tcp-l4-protocol.h"
+@@ -36,38 +37,6 @@ namespace ns3
+ 
+ NS_LOG_COMPONENT_DEFINE("tcp-rl-gym");
+ 
+-NS_OBJECT_ENSURE_REGISTERED(TcpSocketDerived);
+-
+-TypeId
+-TcpSocketDerived::GetTypeId()
+-{
+-    static TypeId tid = TypeId("ns3::TcpSocketDerived")
+-                            .SetParent<TcpSocketBase>()
+-                            .SetGroupName("Internet")
+-                            .AddConstructor<TcpSocketDerived>();
+-    return tid;
+-}
+-
+-TypeId
+-TcpSocketDerived::GetInstanceTypeId() const
+-{
+-    return TcpSocketDerived::GetTypeId();
+-}
+-
+-TcpSocketDerived::TcpSocketDerived()
+-{
+-}
+-
+-Ptr<TcpCongestionOps>
+-TcpSocketDerived::GetCongestionControlAlgorithm()
+-{
+-    return m_congestionControl;
+-}
+-
+-TcpSocketDerived::~TcpSocketDerived()
+-{
+-}
+-
+ NS_OBJECT_ENSURE_REGISTERED(TcpRlBase);
+ 
+ TypeId
+@@ -143,8 +112,14 @@ TcpRlBase::ConnectSocketCallbacks()
+                 continue;
+             }
+ 
+-            Ptr<TcpSocketDerived> dtcpSocket = StaticCast<TcpSocketDerived>(tcpSocket);
+-            Ptr<TcpCongestionOps> ca = dtcpSocket->GetCongestionControlAlgorithm();
++            // Read the real socket's algorithm through its public attribute.
++            PointerValue congestionOps;
++            tcpSocket->GetAttribute("CongestionOps", congestionOps);
++            Ptr<TcpCongestionOps> ca = congestionOps.Get<TcpCongestionOps>();
++            if (!ca)
++            {
++                continue;
++            }
+             NS_LOG_DEBUG("CA name: " << ca->GetName());
+             Ptr<TcpRlBase> rlCa = DynamicCast<TcpRlBase>(ca);
+             if (rlCa == this)
+@@ -308,6 +283,12 @@ TcpRlTimeBased::GetName() const
+     return "TcpRlTimeBased";
+ }
+ 
++Ptr<TcpCongestionOps>
++TcpRlTimeBased::Fork()
++{
++    return CopyObject<TcpRlTimeBased>(this);
++}
++
+ void
+ TcpRlTimeBased::CreateGymEnv()
+ {
+@@ -348,7 +329,9 @@ TcpRlEventBased::TcpRlEventBased()
+ }
+ 
+ TcpRlEventBased::TcpRlEventBased(const TcpRlEventBased& sock)
+-    : TcpRlBase(sock)
++    : TcpRlBase(sock),
++      m_reward(sock.m_reward),
++      m_penalty(sock.m_penalty)
+ {
+     NS_LOG_FUNCTION(this);
+ }
+@@ -363,6 +346,12 @@ TcpRlEventBased::GetName() const
+     return "TcpRlEventBased";
+ }
+ 
++Ptr<TcpCongestionOps>
++TcpRlEventBased::Fork()
++{
++    return CopyObject<TcpRlEventBased>(this);
++}
++
+ void
+ TcpRlEventBased::CreateGymEnv()
+ {
+diff --git a/examples/rl-tcp/use-gym/tcp-rl.h b/examples/rl-tcp/use-gym/tcp-rl.h
+index c14e43e..72272e8 100644
+--- a/examples/rl-tcp/use-gym/tcp-rl.h
++++ b/examples/rl-tcp/use-gym/tcp-rl.h
+@@ -32,19 +32,6 @@ class TcpSocketBase;
+ class Time;
+ class TcpEnvBase;
+ 
+-// used to get pointer to Congestion Algorithm
+-class TcpSocketDerived : public TcpSocketBase
+-{
+-  public:
+-    static TypeId GetTypeId();
+-    TypeId GetInstanceTypeId() const override;
+-
+-    TcpSocketDerived();
+-    ~TcpSocketDerived() override;
+-
+-    Ptr<TcpCongestionOps> GetCongestionControlAlgorithm();
+-};
+-
+ class TcpRlBase : public TcpCongestionOps
+ {
+   public:
+@@ -93,6 +80,7 @@ class TcpRlTimeBased : public TcpRlBase
+     ~TcpRlTimeBased() override;
+ 
+     std::string GetName() const override;
++    Ptr<TcpCongestionOps> Fork() override;
+ 
+   private:
+     void CreateGymEnv() override;
+@@ -108,6 +96,7 @@ class TcpRlEventBased : public TcpRlBase
+     ~TcpRlEventBased() override;
+ 
+     std::string GetName() const override;
++    Ptr<TcpCongestionOps> Fork() override;
+ 
+   private:
+     void CreateGymEnv() override;
+diff --git a/examples/rl-tcp/use-msg/tcp-rl.cc b/examples/rl-tcp/use-msg/tcp-rl.cc
+index 9f398c2..6e38191 100644
+--- a/examples/rl-tcp/use-msg/tcp-rl.cc
++++ b/examples/rl-tcp/use-msg/tcp-rl.cc
+@@ -26,6 +26,7 @@
+ #include "ns3/log.h"
+ #include "ns3/node-list.h"
+ #include "ns3/object.h"
++#include "ns3/pointer.h"
+ #include "ns3/simulator.h"
+ #include "ns3/tcp-header.h"
+ #include "ns3/tcp-l4-protocol.h"
+@@ -36,38 +37,6 @@ namespace ns3
+ 
+ NS_LOG_COMPONENT_DEFINE("tcp-rl-msg");
+ 
+-NS_OBJECT_ENSURE_REGISTERED(TcpSocketDerived);
+-
+-TypeId
+-TcpSocketDerived::GetTypeId()
+-{
+-    static TypeId tid = TypeId("ns3::TcpSocketDerived")
+-                            .SetParent<TcpSocketBase>()
+-                            .SetGroupName("Internet")
+-                            .AddConstructor<TcpSocketDerived>();
+-    return tid;
+-}
+-
+-TypeId
+-TcpSocketDerived::GetInstanceTypeId() const
+-{
+-    return TcpSocketDerived::GetTypeId();
+-}
+-
+-TcpSocketDerived::TcpSocketDerived()
+-{
+-}
+-
+-Ptr<TcpCongestionOps>
+-TcpSocketDerived::GetCongestionControlAlgorithm()
+-{
+-    return m_congestionControl;
+-}
+-
+-TcpSocketDerived::~TcpSocketDerived()
+-{
+-}
+-
+ /////////////////////////////////////////////////////////////////////////
+ 
+ NS_OBJECT_ENSURE_REGISTERED(TcpRlTimeBased);
+@@ -95,7 +64,7 @@ TypeId
+ TcpRlTimeBased::GetTypeId()
+ {
+     static TypeId tid = TypeId("ns3::TcpRlTimeBased")
+-                            .SetParent<TcpSocketBase>()
++                            .SetParent<TcpCongestionOps>()
+                             .AddConstructor<TcpRlTimeBased>()
+                             .SetGroupName("Internet");
+     return tid;
+@@ -148,8 +117,14 @@ TcpRlTimeBased::ConnectSocketCallbacks()
+                 continue;
+             }
+ 
+-            Ptr<TcpSocketDerived> dtcpSocket = StaticCast<TcpSocketDerived>(tcpSocket);
+-            Ptr<TcpCongestionOps> ca = dtcpSocket->GetCongestionControlAlgorithm();
++            // Read the real socket's algorithm through its public attribute.
++            PointerValue congestionOps;
++            tcpSocket->GetAttribute("CongestionOps", congestionOps);
++            Ptr<TcpCongestionOps> ca = congestionOps.Get<TcpCongestionOps>();
++            if (!ca)
++            {
++                continue;
++            }
+             NS_LOG_DEBUG("CA name: " << ca->GetName());
+             Ptr<TcpRlTimeBased> rlCa = DynamicCast<TcpRlTimeBased>(ca);
+             if (rlCa == this)
+@@ -265,7 +240,7 @@ TypeId
+ TcpRlEventBased::GetTypeId()
+ {
+     static TypeId tid = TypeId("ns3::TcpRlEventBased")
+-                            .SetParent<TcpSocketBase>()
++                            .SetParent<TcpCongestionOps>()
+                             .AddConstructor<TcpRlEventBased>()
+                             .SetGroupName("Internet");
+     return tid;
+@@ -408,8 +383,14 @@ TcpRlEventBased::ConnectSocketCallbacks()
+                 continue;
+             }
+ 
+-            Ptr<TcpSocketDerived> dtcpSocket = StaticCast<TcpSocketDerived>(tcpSocket);
+-            Ptr<TcpCongestionOps> ca = dtcpSocket->GetCongestionControlAlgorithm();
++            // Read the real socket's algorithm through its public attribute.
++            PointerValue congestionOps;
++            tcpSocket->GetAttribute("CongestionOps", congestionOps);
++            Ptr<TcpCongestionOps> ca = congestionOps.Get<TcpCongestionOps>();
++            if (!ca)
++            {
++                continue;
++            }
+             NS_LOG_DEBUG("CA name: " << ca->GetName());
+             Ptr<TcpRlEventBased> rlCa = DynamicCast<TcpRlEventBased>(ca);
+             if (rlCa == this)
+diff --git a/examples/rl-tcp/use-msg/tcp-rl.h b/examples/rl-tcp/use-msg/tcp-rl.h
+index 1995d45..cf8691e 100644
+--- a/examples/rl-tcp/use-msg/tcp-rl.h
++++ b/examples/rl-tcp/use-msg/tcp-rl.h
+@@ -34,19 +34,6 @@ namespace ns3
+ class TcpSocketBase;
+ class Time;
+ 
+-// used to get pointer to Congestion Algorithm
+-class TcpSocketDerived : public TcpSocketBase
+-{
+-  public:
+-    static TypeId GetTypeId();
+-    TypeId GetInstanceTypeId() const override;
+-
+-    TcpSocketDerived();
+-    ~TcpSocketDerived() override;
+-
+-    Ptr<TcpCongestionOps> GetCongestionControlAlgorithm();
+-};
+-
+ class TcpRlTimeBased : public TcpCongestionOps
+ {
+   public:

@@ -9,3 +9,7 @@ results/*
 *.pth
 code_snapshot/
 .claude/
+simulator/ns-3-dev/
+simulator/ns-3-external-contrib/fanet-scheduler/test/ns3.*
+simulator/ns-3-external-contrib/fanet-scheduler/test/*-tests*
+!simulator/ns-3-external-contrib/fanet-scheduler/test/*.cc

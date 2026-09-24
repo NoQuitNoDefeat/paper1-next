@@ -1,0 +1,48 @@
+diff --git a/model/gym-interface/py/setup.py b/model/gym-interface/py/setup.py
+index b5ce1be..631bb18 100644
+--- a/model/gym-interface/py/setup.py
++++ b/model/gym-interface/py/setup.py
+@@ -16,10 +16,42 @@
+ # Author: Muyuan Shen <muyuan_shen@hust.edu.cn>
+ 
+ 
+-from setuptools import setup
++from pathlib import Path
++
++from setuptools import Extension, find_packages, setup
++from setuptools.command.build_ext import build_ext
++
++
++SOURCE_DIR = Path(__file__).resolve().parent
++
++
++class CMakeBuiltExtension(build_ext):
++    """Install an extension already built by ns-3/CMake."""
++
++    def build_extension(self, ext: Extension) -> None:
++        source = SOURCE_DIR / self.get_ext_filename(ext.name)
++        protobuf_module = SOURCE_DIR / "messages_pb2.py"
++
++        for required in (source, protobuf_module):
++            if not required.is_file():
++                raise RuntimeError(
++                    f"Missing generated file: {required}. "
++                    "Build ai with the same Python interpreter first."
++                )
++
++        destination = Path(self.get_ext_fullpath(ext.name))
++        self.mkpath(str(destination.parent))
++
++        if source.resolve() != destination.resolve():
++            self.copy_file(str(source), str(destination))
++
+ 
+ setup(
+     name="ns3ai_gym_env",
+     version="0.0.1",
++    packages=find_packages(include=["ns3ai_gym_env", "ns3ai_gym_env.*"]),
++    py_modules=["messages_pb2"],
++    ext_modules=[Extension("ns3ai_gym_msg_py", sources=[])],
++    cmdclass={"build_ext": CMakeBuiltExtension},
+     install_requires=["numpy", "gymnasium", "protobuf"],
+ )

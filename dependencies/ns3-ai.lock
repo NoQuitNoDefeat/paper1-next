@@ -1,0 +1,6 @@
+repository=https://github.com/hust-diangroup/ns3-ai.git
+commit=b8c9858294b1d6a7f122b5154a3ce25057a54740
+# Comma-separated ordered list, paths relative to this lock file.
+patches=patches/ns3-ai-cmake.patch,patches/ns3-ai-examples.patch,patches/ns3-ai-python-package.patch
+verified_ns3_commit=d2add90b452d600cfb4859baed8e9ea633519447
+verification_report=../docs/ns3-ai-validation.md

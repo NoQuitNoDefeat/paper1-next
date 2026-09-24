@@ -1,0 +1,43 @@
+diff --git a/examples/a-plus-b/CMakeLists.txt b/examples/a-plus-b/CMakeLists.txt
+index 2dc315d..4d33227 100644
+--- a/examples/a-plus-b/CMakeLists.txt
++++ b/examples/a-plus-b/CMakeLists.txt
+@@ -4,6 +4,8 @@ build_lib_example(
+         LIBRARIES_TO_LINK ${libai}
+ )
+ pybind11_add_module(ns3ai_apb_py_vec use-msg-vec/apb_py.cc)
++add_dependencies(ns3ai_apb_py_vec proto-objects)
++target_link_libraries(ns3ai_apb_py_vec PRIVATE ${libcore})
+ set_target_properties(ns3ai_apb_py_vec PROPERTIES
+         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/use-msg-vec)
+ 
+@@ -13,6 +15,8 @@ build_lib_example(
+         LIBRARIES_TO_LINK ${libai}
+ )
+ pybind11_add_module(ns3ai_apb_py_stru use-msg-stru/apb_py.cc)
++add_dependencies(ns3ai_apb_py_stru proto-objects)
++target_link_libraries(ns3ai_apb_py_stru PRIVATE ${libcore})
+ set_target_properties(ns3ai_apb_py_stru PROPERTIES
+         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/use-msg-stru)
+ 
+diff --git a/model/gym-interface/py/CMakeLists.txt b/model/gym-interface/py/CMakeLists.txt
+index 58451ef..ae0156a 100644
+--- a/model/gym-interface/py/CMakeLists.txt
++++ b/model/gym-interface/py/CMakeLists.txt
+@@ -1,6 +1,13 @@
+ pybind11_add_module(ns3ai_gym_msg_py msg_py_binding.cc)
++
++# Generate protobuf files before compiling this binding.
++add_dependencies(ns3ai_gym_msg_py proto-objects)
++
++# Resolve ns-3 core symbols when Python loads this binding.
++target_link_libraries(ns3ai_gym_msg_py PRIVATE ${libcore})
++
+ set_target_properties(ns3ai_gym_msg_py PROPERTIES
+         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+ 
+-# Build Python interface along with C++ lib
+-add_dependencies(${libai} ns3ai_gym_msg_py)
++# Build Python interface along with C++ lib.
++add_dependencies(${libai} ns3ai_gym_msg_py)
+\ No newline at end of file
