@@ -15,8 +15,7 @@ Per-cycle order (research-method §6):
    a route, re-homed packets, relay arrivals and births.  Full queues reject
    new packets (``queue_overflow``); packets without a route enter the waiting
    area or are rejected (``waiting_overflow``).  A waiting packet whose target
-   queue is full stays in the waiting area (``waiting_restore="keep"``, default) or is
-   rejected as in the original ledger (``"drop"``).
+   queue is full stays in the waiting area.
 
 Enqueue time is the admission time into the current queue; the HOL wait of a
 queue is ``sample time - enqueue time`` of its current head.
@@ -59,14 +58,9 @@ class LightweightBackend(Backend):
     def __init__(self, channel: dict | str = "ideal", routing: dict | str = "min_hop",
                  stale_queue_policy: str = "rehome", deadline_s: float | None = None,
                  retry_limit: int | None = None, terminate_when_drained: bool = False,
-                 check_conservation: bool = True, waiting_restore: str = "keep"):
+                 check_conservation: bool = True):
         if stale_queue_policy not in {"rehome", "keep"}:
             raise ValueError("stale_queue_policy must be 'rehome' or 'keep'")
-        if waiting_restore not in {"keep", "drop"}:
-            raise ValueError("waiting_restore must be 'keep' or 'drop'")
-        # "drop" reproduces the original ledger (and the unmodified ns-3 bridge): a waiting
-        # packet whose restored route leads to a full queue is rejected (queue_overflow).
-        self.waiting_restore = waiting_restore
         self.channel: ChannelModel = CHANNEL.build(channel)
         self.routing: Routing = ROUTING.build(routing)
         self.stale_queue_policy = stale_queue_policy
@@ -257,9 +251,6 @@ class LightweightBackend(Backend):
                         rehomed += len(stale)
         for w in self.waiting:
             pending += [(p, True) for p in w if self.next_hop[p.node, p.dst] >= 0]
-            if self.waiting_restore == "drop":
-                # original ledger: restorable packets leave the area before admission
-                w[:] = [p for p in w if self.next_hop[p.node, p.dst] < 0]
 
         # 5. admission in (node arrival, id) order
         pending.sort(key=lambda e: (e[0].node_arrived, e[0].pid))
@@ -272,14 +263,11 @@ class LightweightBackend(Backend):
                     raise ExecutionError(f"route {p.node}->{nh} points to an unregistered queue")
                 if len(self.queues[q]) < self.qcap[q]:
                     if from_waiting:
-                        if self.waiting_restore == "keep":
-                            self.waiting[p.node].remove(p)
+                        self.waiting[p.node].remove(p)
                         restored += 1
                     p.enqueued, p.retries = t1, 0
                     self.queues[q].append(p)
-                elif not from_waiting:
-                    terminate("queue_overflow", p)
-                elif self.waiting_restore == "drop":
+                elif not from_waiting:  # a waiting packet stays in its area
                     terminate("queue_overflow", p)
             elif len(self.waiting[p.node]) < self.wcap[p.node]:
                 p.waiting_since = t1

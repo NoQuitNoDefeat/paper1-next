@@ -247,43 +247,20 @@ ReadInitialization(const Value& v)
                 "unknown execution profile");
     }
     const auto& c = v.At("config");
-    const bool semantics = std::get<Map>(c.data).contains("stale_queue_policy");
-    if (semantics)
-    {
-        c.Object({"node_ids",
-                  "queues",
-                  "waiting_areas",
-                  "packet_size_bytes",
-                  "start_ns",
-                  "end_ns",
-                  "period_ns",
-                  "packet_deadlines_enabled",
-                  "retransmissions_enabled",
-                  "stale_queue_policy",
-                  "waiting_restore"});
-    }
-    else
-    {
-        c.Object({"node_ids",
-                  "queues",
-                  "waiting_areas",
-                  "packet_size_bytes",
-                  "start_ns",
-                  "end_ns",
-                  "period_ns",
-                  "packet_deadlines_enabled",
-                  "retransmissions_enabled"});
-    }
+    c.Object({"node_ids",
+              "queues",
+              "waiting_areas",
+              "packet_size_bytes",
+              "start_ns",
+              "end_ns",
+              "period_ns",
+              "packet_deadlines_enabled",
+              "retransmissions_enabled",
+              "stale_queue_policy"});
     auto& config = result.config;
-    if (semantics)
-    {
-        const auto stale = c.At("stale_queue_policy").S();
-        const auto restore = c.At("waiting_restore").S();
-        Require((stale == "keep" || stale == "rehome") && (restore == "drop" || restore == "keep"),
-                "unknown queue semantics");
-        config.rehomeStaleQueues = stale == "rehome";
-        config.keepRestoredWaiting = restore == "keep";
-    }
+    const auto stale = c.At("stale_queue_policy").S();
+    Require(stale == "keep" || stale == "rehome", "unknown stale queue policy");
+    config.rehomeStaleQueues = stale == "rehome";
     config.packetBytes = c.At("packet_size_bytes").U();
     config.start = c.At("start_ns").I();
     config.end = c.At("end_ns").I();
@@ -362,9 +339,8 @@ ReadInitialization(const Value& v)
             const auto& moving = settings.At("motion");
             moving.Object({"profile", "low_m", "high_m", "reference_distance_m",
                            "path_loss_exponent", "sinr_threshold"});
-            Require(actualAck && moving.At("profile").S() ==
-                                     "continuous-motion-frame-quasistatic-v1",
-                    "unknown or incompatible moving channel profile");
+            Require(moving.At("profile").S() == "continuous-motion-frame-quasistatic-v1",
+                    "unknown moving channel profile");
             result.radioMotion = MotionSettings{ReadVector(moving.At("low_m")),
                                                  ReadVector(moving.At("high_m")),
                                                  moving.At("reference_distance_m").D(),

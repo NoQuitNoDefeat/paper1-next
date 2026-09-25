@@ -162,3 +162,19 @@ def test_select_command_applies_reliability_first_rule(tmp_path):
     if out["any_eligible"]:
         assert out["selected"]["eligible"]
     assert (tmp_path / "selection.json").exists()
+
+
+def test_switch_backend_keeps_environment_parameters():
+    """``--set backend.type=`` clears the section (default routing!); ``switch_backend`` keeps it."""
+    from fanet_next.config import apply_override, load_config
+    from fanet_next.experiment.assemble import switch_backend
+
+    cfg = load_config("configs/protocol_final.toml")
+    switched = switch_backend(cfg, "ns3")
+    assert switched["backend"] == {**cfg["backend"], "type": "ns3"}
+    assert cfg["backend"]["type"] == "lightweight"  # input untouched
+    apply_override(switched, "backend.motion=false")
+    assert switched["backend"]["routing"]["snr_margin_db"] == 6.0
+    assert switched["backend"]["motion"] is False
+    cleared = load_config("configs/protocol_final.toml", ["backend.type=\"ns3\""])
+    assert "routing" not in cleared["backend"]

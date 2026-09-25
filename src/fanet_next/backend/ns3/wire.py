@@ -9,6 +9,7 @@ No native object layouts, pickle payloads or shared-memory views cross the bound
 
 import dataclasses
 import math
+import re
 import struct
 import uuid
 from enum import IntEnum
@@ -50,106 +51,140 @@ def plain(value):
     return value
 
 
+_NONPRINTABLE = re.compile(rb"[^\x20-\x7e]")
+_U32, _U64, _I64, _F64 = (struct.Struct(f).pack for f in ("<I", "<Q", "<q", "<d"))
+_U32_AT, _U64_AT, _I64_AT, _F64_AT = (struct.Struct(f).unpack_from for f in ("<I", "<Q", "<q", "<d"))
+_INT_MAX = {True: 2**63 - 1, False: 2**64 - 1}
+
+
 def encode_value(value, *, limit: int = 8 * 1024 * 1024) -> bytes:
     """Encode a bounded canonical tree; *_ns fields are nonnegative signed int64."""
     out = bytearray()
+    put = out.extend
 
-    def put(data):
-        if len(out) + len(data) > limit:
-            raise ValueError("wire payload exceeds configured byte capacity")
-        out.extend(data)
-
-    def item(v, depth=0, name=""):
+    def item(v, depth, name):
         if depth > MAX_DEPTH:
             raise ValueError("wire nesting limit")
-        if v is None:
-            put(b"\x00")
-        elif type(v) is bool:
-            put(b"\x02" if v else b"\x01")
-        elif type(v) is int:
-            signed = name.endswith("_ns")
-            if not 0 <= v <= (2**63 - 1 if signed else 2**64 - 1):
-                raise ValueError(f"wire integer outside range: {name}")
-            put(bytes([4 if signed else 3]) + struct.pack("<q" if signed else "<Q", v))
-        elif type(v) is float:
+        t = type(v)
+        if t is float:
             if not math.isfinite(v):
                 raise ValueError("wire nonfinite binary64")
-            put(b"\x05" + struct.pack("<d", v))
-        elif type(v) is str:
-            data = v.encode("ascii")
-            if len(data) > MAX_STRING or any(c < 32 or c > 126 for c in data):
-                raise ValueError("wire strings require bounded printable ASCII")
-            put(b"\x06" + struct.pack("<I", len(data)) + data)
-        elif type(v) in (list, tuple):
-            if len(v) > MAX_COUNT:
-                raise ValueError("wire array count exceeds limit")
-            put(b"\x07" + struct.pack("<I", len(v)))
-            for child in v:
-                item(child, depth + 1)
-        elif type(v) is dict:
+            put(b"\x05")
+            put(_F64(v))
+        elif t is int:
+            signed = name.endswith("_ns")
+            if not 0 <= v <= _INT_MAX[signed]:
+                raise ValueError(f"wire integer outside range: {name}")
+            put(b"\x04" if signed else b"\x03")
+            put(_I64(v) if signed else _U64(v))
+        elif t is dict:
             if len(v) > 256 or any(type(k) is not str for k in v):
                 raise ValueError("wire object keys/count")
-            put(b"\x08" + struct.pack("<I", len(v)))
+            put(b"\x08")
+            put(_U32(len(v)))
             for key in sorted(v):
-                item(key, depth + 1)
+                item(key, depth + 1, "")
                 item(v[key], depth + 1, key)
+        elif t is list or t is tuple:
+            if len(v) > MAX_COUNT:
+                raise ValueError("wire array count exceeds limit")
+            put(b"\x07")
+            put(_U32(len(v)))
+            for child in v:
+                item(child, depth + 1, "")
+        elif t is str:
+            data = v.encode("ascii")
+            if len(data) > MAX_STRING or _NONPRINTABLE.search(data):
+                raise ValueError("wire strings require bounded printable ASCII")
+            put(b"\x06")
+            put(_U32(len(data)))
+            put(data)
+        elif v is None:
+            put(b"\x00")
+        elif t is bool:
+            put(b"\x02" if v else b"\x01")
+        elif dataclasses.is_dataclass(v):
+            item(plain(v), depth, name)
         else:
-            raise ValueError(f"unsupported wire type: {type(v).__name__}")
+            raise ValueError(f"unsupported wire type: {t.__name__}")
+        if len(out) > limit:
+            raise ValueError("wire payload exceeds configured byte capacity")
 
-    item(plain(value))
+    item(value, 0, "")
     return bytes(out)
 
 
 def decode_value(data: bytes):
     """Decode into independent host values, rejecting truncation and noncanonical maps."""
+    data = bytes(data)
+    size = len(data)
     pos = 0
+    strings: dict[bytes, str] = {}  # map keys repeat; decode each distinct string once
 
-    def take(n):
-        nonlocal pos
-        if n > len(data) - pos:
+    def need(n):
+        if n > size - pos:
             raise ProtocolError("truncated wire value")
-        result = data[pos : pos + n]
-        pos += n
-        return result
 
     def count(maximum):
-        n = struct.unpack("<I", take(4))[0]
-        if n > maximum or n > len(data) - pos:
+        nonlocal pos
+        need(4)
+        n = _U32_AT(data, pos)[0]
+        pos += 4
+        if n > maximum or n > size - pos:
             raise ProtocolError("wire length/count out of bounds")
         return n
 
-    def item(depth=0):
+    def item(depth):
+        nonlocal pos
         if depth > MAX_DEPTH:
             raise ProtocolError("wire nesting limit")
-        tag = take(1)[0]
-        if tag == 0:
-            return None
-        if tag in (1, 2):
-            return tag == 2
-        if tag in (3, 4, 5):
-            value = struct.unpack({3: "<Q", 4: "<q", 5: "<d"}[tag], take(8))[0]
-            if (tag == 4 and value < 0) or (tag == 5 and not math.isfinite(value)):
+        need(1)
+        tag = data[pos]
+        pos += 1
+        if tag == 5:
+            need(8)
+            value = _F64_AT(data, pos)[0]
+            pos += 8
+            if not math.isfinite(value):
                 raise ProtocolError("invalid wire numeric value")
             return value
-        if tag == 6:
-            raw = take(count(MAX_STRING))
-            if any(c < 32 or c > 126 for c in raw):
-                raise ProtocolError("wire string is not printable ASCII")
-            return raw.decode("ascii")
-        if tag == 7:
-            return [item(depth + 1) for _ in range(count(MAX_COUNT))]
+        if tag == 3 or tag == 4:
+            need(8)
+            value = (_U64_AT if tag == 3 else _I64_AT)(data, pos)[0]
+            pos += 8
+            if value < 0:
+                raise ProtocolError("invalid wire numeric value")
+            return value
         if tag == 8:
             values = {}
+            last = None
             for _ in range(count(256)):
                 key = item(depth + 1)
-                if type(key) is not str or (values and key <= next(reversed(values))):
+                if type(key) is not str or (last is not None and key <= last):
                     raise ProtocolError("wire object keys must be unique and sorted")
                 values[key] = item(depth + 1)
+                last = key
             return values
+        if tag == 7:
+            return [item(depth + 1) for _ in range(count(MAX_COUNT))]
+        if tag == 6:
+            n = count(MAX_STRING)
+            raw = data[pos:pos + n]
+            pos += n
+            text = strings.get(raw)
+            if text is None:
+                if _NONPRINTABLE.search(raw):
+                    raise ProtocolError("wire string is not printable ASCII")
+                text = strings[raw] = raw.decode("ascii")
+            return text
+        if tag == 0:
+            return None
+        if tag == 1 or tag == 2:
+            return tag == 2
         raise ProtocolError("unknown wire value tag")
 
-    value = item()
-    if pos != len(data):
+    value = item(0)
+    if pos != size:
         raise ProtocolError("trailing wire value bytes")
     return value
 

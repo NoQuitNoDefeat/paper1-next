@@ -38,6 +38,16 @@ def _spec(cfg: dict, key: str, default):
     return {"type": value} if isinstance(value, str) else value
 
 
+def switch_backend(cfg: dict, backend_type: str) -> dict:
+    """Same environment, other executor: change the backend ``type`` and keep its
+    parameters (routing, channel, queue policy).  A plain ``--set backend.type=...``
+    clears the section instead, which would silently fall back to default routing.
+    Parameters the target backend does not accept fail at build time."""
+    out = dict(cfg)
+    out["backend"] = {**_spec(cfg, "backend", "lightweight"), "type": backend_type}
+    return out
+
+
 def build_env(cfg: dict, *, run_id: str = "run", build_graph: bool = True,
               scenario_override: dict | None = None) -> SchedulingEnv:
     scenario = scenario_override if scenario_override is not None else cfg["scenario"]

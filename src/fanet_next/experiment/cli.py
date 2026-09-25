@@ -52,15 +52,18 @@ def _cmd_resume(args) -> None:
 
 
 def _cmd_eval(args) -> None:
+    from ..config import apply_override
+    from .assemble import switch_backend
     if args.run_dir:
         ckpt = load_checkpoint(args.checkpoint or Path(args.run_dir) / "checkpoints" / "latest.pt")
         cfg = ckpt["config"]
-        for item in args.set or []:
-            from ..config import apply_override
-            apply_override(cfg, item)
     else:
         ckpt = None
-        cfg = load_config(args.config, args.set)
+        cfg = load_config(args.config)
+    if args.backend:
+        cfg = switch_backend(cfg, args.backend)
+    for item in args.set or []:
+        apply_override(cfg, item)
     table = {}
     for name in args.policies:
         if name == "ppo":
@@ -115,6 +118,8 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--run-dir")
     e.add_argument("--checkpoint")
     e.add_argument("--set", action="append", default=[])
+    e.add_argument("--backend", help="execute on this backend with the same environment "
+                   "parameters (e.g. ns3), applied before --set")
     e.add_argument("--policies", nargs="+", default=["longest_queue", "random"])
     e.add_argument("--split", default="dev", choices=["dev", "test"])
     e.add_argument("--episodes", type=int, default=8)

@@ -62,11 +62,9 @@ struct Config
     Ns period{};
     bool packetDeadlines{false};
     bool retransmissions{false};
-    // paper1-next semantics (optional INIT fields; defaults keep the original ledger):
-    // re-admit queued packets whose next hop changed when routes are updated, and keep a
-    // restorable waiting packet in its area when the target queue is full.
+    // paper1-next: re-admit queued packets whose next hop changed when routes are updated
+    // (INIT stale_queue_policy "rehome"); "keep" leaves them in place (a control).
     bool rehomeStaleQueues{false};
-    bool keepRestoredWaiting{false};
     bool operator==(const Config&) const = default;
 };
 

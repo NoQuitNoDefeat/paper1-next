@@ -56,31 +56,39 @@ def _routes(next_hop: np.ndarray) -> list[dict]:
             for u in range(n) for d in range(n) if u != d]
 
 
-RADIO_PROFILES = ("ideal-spectrum-v1", "transaction-ack-v1")
+PHY_PROFILE = "ideal-spectrum-v1"
 MOTION_PROFILE = "continuous-motion-frame-quasistatic-v1"
 
 
-def radio_settings(scenario: Scenario, profile: str, *, motion: bool, center_hz: float = 2.4e9,
+def radio_settings(scenario: Scenario, *, motion: bool, center_hz: float = 2.4e9,
                    bandwidth_hz: float | None = None, propagation_ns: int = 1000,
-                   overhead_bytes: int = 24, ack_bytes: int = 24,
-                   ack_rate_bytes_per_second: int | None = None, turnaround_ns: int = 16_000) -> dict:
-    """Physical-layer settings consistent with the planning model.
+                   overhead_bytes: int = 24) -> dict:
+    """PHY execution settings consistent with the planning model.
 
-    The Shannon PHY decodes when rate <= B log2(1 + SINR); the default bandwidth makes
-    the planning SINR threshold exactly the decoding threshold of the single MCS.
+    DATA frames cross the ns-3 Spectrum channel and are decoded by the Shannon error
+    model under the actual, time-varying cumulative interference; a correct reception
+    is confirmed to the centralized ledger out of band (the planning model's
+    confirmation), a failed head blocks its link for the rest of the cycle.
+    ``motion`` moves the nodes continuously inside each cycle (specular reflection in
+    the scenario box) and rescales every gain at each reception start.
+
+    Decoding threshold: ns-3's Shannon model decodes a frame of F bytes iff
+    floor(B log2(1 + SINR) T / 8) > F with T = F / rate (all frames have one size and
+    start together, so interference only changes at frame boundaries: one chunk per
+    frame).  The default bandwidth gives F + 1 deliverable bytes at the planning
+    threshold (plus a 1e-6 relative guard for time rounding), so the PHY decodes iff
+    the planning model's SINR condition holds.
     """
     radio = scenario.radio
     rate = int(radio.rate_bps // 8)
+    frame = scenario.packet_size + int(overhead_bytes)
     if bandwidth_hz is None:
-        bandwidth_hz = 8.0 * rate / float(np.log2(1.0 + radio.threshold))
-    settings = {"profile": profile, "center_hz": float(center_hz), "bandwidth_hz": float(bandwidth_hz),
-                "propagation_ns": int(propagation_ns), "overhead_bytes": int(overhead_bytes)}
-    if profile == "transaction-ack-v1":
-        settings.update(ack_bytes=int(ack_bytes), turnaround_ns=int(turnaround_ns),
-                        ack_rate_bytes_per_second=int(ack_rate_bytes_per_second or rate))
+        bandwidth_hz = (8.0 * rate * (frame + 1) * (1 + 1e-6)
+                        / (frame * float(np.log2(1.0 + radio.threshold))))
+    settings = {"profile": PHY_PROFILE, "center_hz": float(center_hz),
+                "bandwidth_hz": float(bandwidth_hz), "propagation_ns": int(propagation_ns),
+                "overhead_bytes": int(overhead_bytes)}
     if motion:
-        if profile != "transaction-ack-v1":
-            raise ValueError("the moving channel requires actual ACKs (transaction-ack-v1)")
         low, high = scenario.motion_bounds()
         settings["motion"] = {"profile": MOTION_PROFILE, "low_m": [float(x) for x in low],
                               "high_m": [float(x) for x in high],
@@ -90,8 +98,11 @@ def radio_settings(scenario: Scenario, profile: str, *, motion: bool, center_hz:
     return settings
 
 
-def build_episode(scenario: Scenario, routing: Routing, *, execution_profile: str,
+def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: str = "rehome",
                   wireless: dict | None = None) -> Episode:
+    """INIT payload.  Without ``wireless`` ns-3 runs its frozen full-SINR ledger on the
+    observed gains (the lightweight backend's execution, used for alignment); with it,
+    DATA is executed by the PHY (:func:`radio_settings`)."""
     sc, radio = scenario, scenario.radio
     n, horizon, ps = sc.num_nodes, sc.horizon, sc.packet_size
     period_ns = int(round(sc.cycle_length * NS))
@@ -124,7 +135,7 @@ def build_episode(scenario: Scenario, routing: Routing, *, execution_profile: st
                            "max_wait_ns": int(round(sc.waiting_max_wait * NS))} for i in range(n)],
         "packet_size_bytes": ps, "start_ns": 0, "end_ns": horizon * period_ns,
         "period_ns": period_ns, "packet_deadlines_enabled": False,
-        "retransmissions_enabled": False,
+        "retransmissions_enabled": False, "stale_queue_policy": stale_queue_policy,
     }
     initial = {"packets": [],
                "queues": [{"key": [int(u), int(v)], "entries": []} for u, v in qlinks],
@@ -177,8 +188,8 @@ def build_episode(scenario: Scenario, routing: Routing, *, execution_profile: st
     if wireless is not None:
         # private execution channel: the truth; with the ideal estimate it equals the observation
         payload["wireless"] = {**wireless, "frames": [physical(k) for k in range(horizon + 1)]}
-    elif execution_profile != "controlled-budget-v1":
-        payload["execution_profile"] = execution_profile
+    else:
+        payload["execution_profile"] = "full-sinr-v1"
     return Episode(payload=payload, period_ns=period_ns, horizon=horizon, packet_size=ps,
                    qlinks=qlinks, positions=positions, velocities=velocities, gains=gains,
                    next_hops=next_hops, power=power, noise=noise, threshold=threshold,
@@ -201,8 +212,7 @@ def result_capacity(payload: dict, physical_bytes: int) -> int:
     extra = 0
     if radio is not None:
         links = len(c["node_ids"]) // 2
-        extra = ((3200 if radio["profile"] == "transaction-ack-v1" else 2000) * packets
-                 + 512 * len(c["queues"]) + 4096 + 256 * links * links)
+        extra = 2000 * packets + 512 * len(c["queues"]) + 4096 + 256 * links * links
         extra += 1000 * packets if "motion" in radio else 0
     return (16384 + extra + physical_bytes + 4500 * packets + 1500 * len(c["queues"])
             + 1000 * len(c["waiting_areas"]) + 150 * len(routes) + 20 * len(c["node_ids"]))

@@ -73,17 +73,17 @@ def compare_facts(a, b, where: str) -> list[str]:
 
 def align_episode(cfg: dict, seed: int, policy: str | dict = "longest_queue", *,
                   horizon: int | None = None, model_state=None, max_report: int = 20,
-                  stale_queue_policy: str = "rehome", waiting_restore: str = "keep") -> dict:
+                  stale_queue_policy: str = "rehome") -> dict:
     """Run one episode on both backends in lockstep; return counts and the first mismatches.
 
-    Both backends use the same queue semantics: this project's (rehome/keep, default)
-    or the original ledger's (keep/drop).
+    ns-3 runs its frozen full-SINR ledger (``execution="ledger"``), which must reproduce
+    the lightweight backend exactly under the same stale-queue policy.
     """
     backend = cfg.get("backend", {})
     common = {k: backend[k] for k in ("routing",) if k in backend}
-    common.update(stale_queue_policy=stale_queue_policy, waiting_restore=waiting_restore)
+    common.update(stale_queue_policy=stale_queue_policy)
     light = deep_merge(cfg, {"backend": {"type": "lightweight", "channel": "ideal", **common}})
-    ns3 = deep_merge(cfg, {"backend": {"type": "ns3", **common}})
+    ns3 = deep_merge(cfg, {"backend": {"type": "ns3", "execution": "ledger", **common}})
     if horizon is not None:
         light = deep_merge(light, {"scenario": {"horizon": horizon}})
         ns3 = deep_merge(ns3, {"scenario": {"horizon": horizon}})

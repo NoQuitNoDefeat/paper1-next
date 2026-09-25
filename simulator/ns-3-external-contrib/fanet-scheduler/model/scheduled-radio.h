@@ -68,8 +68,10 @@ struct ExecutionChannel
 /**
  * Plan-driven single-radio execution using ns-3 Spectrum and its Shannon error model.
  * The receiver synchronizes only to its scheduled peer; all other signals remain interference.
- * The legacy profile has ideal confirmation; the actual-ACK profile commits the centralized
- * ledger only after the reverse wireless ACK. Failed heads can retry in later cycles only.
+ * ideal-spectrum-v1 (paper1-next's execution) confirms a correct DATA reception to the
+ * centralized ledger out of band, with or without continuous motion; the inherited actual-ACK
+ * profile (unused by paper1-next) commits only after the reverse wireless ACK. Failed heads
+ * can retry in later cycles only.
  * Configure once per episode. The caller owns Simulator::Run/Destroy; on failure dispose both
  * radio and environment and Destroy before any further Run.
  */

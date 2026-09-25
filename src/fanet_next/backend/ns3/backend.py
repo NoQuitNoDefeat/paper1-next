@@ -17,13 +17,9 @@ from ...scenario.base import Scenario
 from ...scenario.channel import CHANNEL, IdealChannel
 from ...scenario.routing import ROUTING, Routing
 from ..base import BACKEND, Backend
-from .convert import (RADIO_PROFILES, build_episode, facts_from, radio_settings, report_from,
-                      result_capacity)
+from .convert import build_episode, facts_from, radio_settings, report_from, result_capacity
 from .process import DEFAULT_NS3_ROOT, Supervisor, TransportConfig
 from .wire import HEADER, Kind, ProtocolError, decode, encode, encode_value
-
-PROFILES = ("full-sinr-v1", "controlled-budget-v1", *RADIO_PROFILES)
-
 
 def _mib(nbytes: int) -> int:
     return int(math.ceil(nbytes / (1 << 20))) << 20
@@ -31,35 +27,33 @@ def _mib(nbytes: int) -> int:
 
 @BACKEND.register("ns3", role="variant")
 class Ns3Backend(Backend):
-    """ns-3.48 fanet-scheduler bridge (wire v2): frozen-CSI ledger or PHY radio (DATA/ACK, motion).
+    """ns-3.48 fanet-scheduler bridge (wire v2): PHY execution with motion, or the SINR ledger.
 
-    Profiles: ``full-sinr-v1`` (cumulative SINR on observed gains, no PHY),
-    ``ideal-spectrum-v1`` (spectrum PHY, ideal confirmation) and ``transaction-ack-v1``
-    (spectrum PHY with DATA/ACK transactions; ``motion=True`` adds continuous motion
-    with per-reception quasi-static gains).  Radio options go to ``radio``.
+    ``execution="phy"`` (default): DATA frames cross the ns-3 Spectrum channel and are
+    decoded under the actual cumulative interference; correct receptions are confirmed
+    to the centralized ledger (see ``convert.radio_settings``).  ``motion`` moves the
+    nodes continuously inside each cycle.  ``execution="ledger"``: ns-3's ledger applies
+    the lightweight backend's frozen full-SINR rule on the observed gains; it must match
+    the lightweight backend exactly (``alignment``).  PHY options go to ``radio``.
     """
 
     supports_state = False
 
     def __init__(self, channel: dict | str = "ideal", routing: dict | str = "min_hop",
-                 stale_queue_policy: str = "rehome", waiting_restore: str = "keep",
-                 execution_profile: str = "full-sinr-v1", motion: bool = False,
-                 radio: dict | None = None, ns3_root: str | None = None,
+                 stale_queue_policy: str = "rehome", execution: str = "phy",
+                 motion: bool = True, radio: dict | None = None, ns3_root: str | None = None,
                  timeout_seconds: float = 60.0):
         self.channel = CHANNEL.build(channel)
         if not isinstance(self.channel, IdealChannel):
-            raise ValueError("ns3 full-sinr profile executes on the observed (ideal) channel")
+            raise ValueError("ns3 backend executes the scenario's own geometry (ideal channel)")
         self.routing: Routing = ROUTING.build(routing)
-        if stale_queue_policy not in {"rehome", "keep"} or waiting_restore not in {"keep", "drop"}:
-            raise ValueError("stale_queue_policy in {rehome, keep}, waiting_restore in {keep, drop}")
-        self.semantics = {"stale_queue_policy": stale_queue_policy,
-                          "waiting_restore": waiting_restore}
-        if execution_profile not in PROFILES:
-            raise ValueError(f"execution_profile must be one of {PROFILES}")
-        self.profile = execution_profile
-        if motion and execution_profile != "transaction-ack-v1":
-            raise ValueError("motion requires execution_profile = transaction-ack-v1")
-        self.motion = bool(motion)
+        if stale_queue_policy not in {"rehome", "keep"}:
+            raise ValueError("stale_queue_policy must be 'rehome' or 'keep'")
+        self.stale_queue_policy = stale_queue_policy
+        if execution not in {"phy", "ledger"}:
+            raise ValueError("execution must be 'phy' or 'ledger'")
+        self.execution = execution
+        self.motion = bool(motion) and execution == "phy"
         self.radio_options = dict(radio or {})
         self.ns3_root = ns3_root
         self.timeout = float(timeout_seconds)
@@ -95,11 +89,10 @@ class Ns3Backend(Backend):
               seed: int = 0) -> Report:
         self.close()
         self.run_id, self.episode = run_id, episode
-        wireless = (radio_settings(scenario, self.profile, motion=self.motion, **self.radio_options)
-                    if self.profile in RADIO_PROFILES else None)
-        self._ep = build_episode(scenario, self.routing, execution_profile=self.profile,
-                                 wireless=wireless)
-        self._ep.payload["config"].update(self.semantics)
+        wireless = (radio_settings(scenario, motion=self.motion, **self.radio_options)
+                    if self.execution == "phy" else None)
+        self._ep = build_episode(scenario, self.routing,
+                                 stale_queue_policy=self.stale_queue_policy, wireless=wireless)
         body = encode_value(self._ep.payload, limit=1 << 30)
         physical = max(len(encode_value(p)) for p in self._ep.payload["physical_inputs"])
         tx = _mib(len(body) + HEADER.size + 4096)

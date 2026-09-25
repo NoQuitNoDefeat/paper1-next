@@ -1,0 +1,40 @@
+{
+  "name": "E10 ns-3 物理层验证（定稿主方法）",
+  "out": "results/e10",
+  "eval": {
+    "split": "test",
+    "seed_offset": 1000,
+    "episodes": 64,
+    "drain": 1000,
+    "shards": 4
+  },
+  "executors": {
+    "lightweight": null,
+    "ns3": "ns3"
+  },
+  "scenarios": {
+    "default": [],
+    "load_high": ["scenario.flow_rate_pps=[30.0, 45.0]"]
+  },
+  "baseline_config": "configs/protocol_final.toml",
+  "baselines": ["longest_queue", "hol_weighted"],
+  "fixed": {
+    "仅模仿": "results/runs/imit-lq-bc-only/checkpoints/latest.pt"
+  },
+  "groups": {
+    "主方法": [
+      "results/e6/no_set_summary-s0",
+      "results/e6/no_set_summary-s1",
+      "results/e6/no_set_summary-s2",
+      "results/e9/final-s3",
+      "results/e9/final-s4"
+    ]
+  },
+  "controls": {
+    "LQ-成对约束（正向对照）": {
+      "policy": "longest_queue",
+      "set": ["constraints.interference=\"pairwise\""],
+      "scenarios": ["default"]
+    }
+  }
+}

@@ -675,10 +675,7 @@ ControlledEnvironment::Settle()
                          .nextHop)
             {
                 m_pending.push_back({entry.packet, area.node, entry.arrived, "waiting"});
-                if (config.keepRestoredWaiting)
-                {
-                    survivors.push_back(entry); // leaves the area only once a queue admits it
-                }
+                survivors.push_back(entry); // leaves the area only once a queue admits it
             }
             else
             {
@@ -725,7 +722,8 @@ ControlledEnvironment::Settle()
             auto queue = std::ranges::find(m_work.queues, key, &Queue::key);
             const auto capacity =
                 std::ranges::find(config.queues, key, &QueueConfig::key)->capacity;
-            const bool restoring = arrival.origin == "waiting" && config.keepRestoredWaiting;
+            // paper1-next: a restorable waiting packet stays in its area while the queue is full.
+            const bool restoring = arrival.origin == "waiting";
             if (queue->entries.size() >= capacity / config.packetBytes)
             {
                 if (!restoring) // a restorable waiting packet otherwise stays in its area

@@ -463,8 +463,8 @@ ScheduledRadio::Configure(Ptr<ControlledEnvironment> env,
     const auto trajectory = motion ? std::make_shared<const MotionTrace>(
                                         *motion, config.start, config.period, config.nodes)
                                    : nullptr;
-    Require(!motion || (settings.actualAck && motion->boundaries.size() == frames.size()),
-            "moving channel requires actual ACKs and complete motion boundaries");
+    Require(!motion || motion->boundaries.size() == frames.size(),
+            "moving channel requires complete motion boundaries");
     Require(config.nodes.size() >= 2 && config.nodes.size() <= 64,
             "development radio supports 2 through 64 nodes; not a capacity limit");
     Require(std::isfinite(settings.centerHz) && std::isfinite(settings.bandwidthHz) &&

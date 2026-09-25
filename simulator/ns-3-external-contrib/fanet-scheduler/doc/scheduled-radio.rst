@@ -6,9 +6,10 @@ Scheduled radio and explicit execution profiles
 not an IEEE 802.11 MAC. Receivers synchronize ideally to their scheduled peer; all other signals
 remain interference. Two profiles are explicit; neither claims a deployed wireless standard.
 
-* ``ideal-spectrum-v1`` preserves the historical zero-delay reliable confirmation without
-  actual ACKs. It is a development reference, not the stage 6.8 final radio profile.
-* ``transaction-ack-v1`` sends an actual reverse ACK after a configured turnaround interval.
+* ``ideal-spectrum-v1`` confirms every correct DATA reception to the centralized ledger out of
+  band, without an over-the-air ACK. This is paper1-next's execution profile: it matches the
+  planning model's centralized confirmation. It may be combined with continuous motion.
+* ``transaction-ack-v1`` (inherited, not used by paper1-next) sends an actual reverse ACK after a configured turnaround interval.
   DATA reception creates a non-authoritative copy. Only actual ACK reception atomically commits
   service, relay or delivery in the centralized research ledger. Failed copies are discarded;
   the original packet ID, FIFO position and HOL time survive for a later scheduled cycle.
