@@ -126,9 +126,44 @@ def dev_history() -> dict:
             "imit_dr": imit["delivery_ratio"]}
 
 
+def e10() -> dict:
+    """ns-3 PHY validation: the method's advantage in both executors, and per-policy fidelity."""
+    from e10_ns3 import load_rows, policies, seed_avg
+
+    spec = _load_spec("configs/experiments/e10_ns3.json")
+    group, ref = next(iter(spec["groups"])), spec["baselines"][0]
+    ns3 = next(x for x, b in spec["executors"].items() if b)
+    light = next(x for x, b in spec["executors"].items() if not b)
+    control = next(iter(spec.get("controls", {})), None)
+
+    def d(a, b, key):
+        m, lo, hi = ci(seed_avg(a, key) - seed_avg(b, key))
+        return {"m": m, "lo": lo, "hi": hi}
+
+    scen = []
+    for v in spec["scenarios"]:
+        rows = {x: {n: load_rows(spec, v, x, n) for n in policies(spec)} for x in spec["executors"]}
+        adv = {x: {k: d(rows[x][group], rows[x][ref], k) for k in METRICS} for x in (light, ns3)}
+        fid = {}
+        for n in policies(spec):
+            a, b = rows[ns3][n], rows[light][n]
+            if a is None or b is None:
+                continue
+            fid[n] = {"delivery_ratio": d(a, b, "delivery_ratio"),
+                      "e2e_delay_mean_s": d(a, b, "e2e_delay_mean_s"),
+                      "per": float(np.mean(seed_avg(a, "per"))),
+                      "failed": float(np.mean(seed_avg(a, "exec_failed_link_frac"))),
+                      "dr_ns3": float(np.mean(seed_avg(a, "delivery_ratio"))),
+                      "control": n == control}
+        scen.append({"id": v, "label": SCEN_LABEL[v], "adv": adv, "fid": fid})
+    return {"scenarios": scen, "episodes": spec["eval"]["episodes"], "drain": spec["eval"]["drain"],
+            "seed_offset": spec["eval"]["seed_offset"], "main": group, "ref": ref, "control": control,
+            "executors": {"light": light, "ns3": ns3}}
+
+
 def collect() -> dict:
-    return {"e9": e9(), "curves": curves(), "ablations": ablations(), "e8": summary_redesign(),
-            "dev": dev_history(), "labels": SCEN_LABEL}
+    return {"e9": e9(), "e10": e10(), "curves": curves(), "ablations": ablations(),
+            "e8": summary_redesign(), "dev": dev_history(), "labels": SCEN_LABEL}
 
 
 if __name__ == "__main__":

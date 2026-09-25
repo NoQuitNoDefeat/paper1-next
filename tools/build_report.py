@@ -50,6 +50,20 @@ def main() -> None:
         "lq_test_default": f"{sc['default']['means']['longest_queue']['delivery_ratio']:.3f}",
         "commit": commit, "built": time.strftime("%Y-%m-%d"),
     }
+    e10 = {x["id"]: x for x in d["e10"]["scenarios"]}
+    full = [f for x in e10.values() for f in x["fid"].values() if not f["control"]]
+    ctrl = e10["default"]["fid"][d["e10"]["control"]]
+    ref_lq = e10["default"]["fid"][d["e10"]["ref"]]
+    facts.update({
+        "e10_episodes": d["e10"]["episodes"], "e10_drain": d["e10"]["drain"],
+        "e10_dr_default": fmt_pp(e10["default"]["adv"]["ns3"]["delivery_ratio"]["m"]),
+        "e10_dr_default_lo": fmt_pp(e10["default"]["adv"]["ns3"]["delivery_ratio"]["lo"]),
+        "e10_dr_high": fmt_pp(e10["load_high"]["adv"]["ns3"]["delivery_ratio"]["m"]),
+        "e10_fid_max": f"{max(max(abs(f['delivery_ratio']['lo']), abs(f['delivery_ratio']['hi'])) for f in full) * 100:.2f}",
+        "e10_per_max": f"{max(f['per'] for f in full) * 100:.2f}",
+        "e10_ctrl_per": f"{ctrl['per'] * 100:.1f}", "e10_ctrl_failed": f"{ctrl['failed'] * 100:.0f}",
+        "e10_ctrl_dr": f"{ctrl['dr_ns3']:.3f}", "e10_lq_dr": f"{ref_lq['dr_ns3']:.3f}",
+    })
     html = TEMPLATE
     for k, v in facts.items():
         html = html.replace("{{" + k + "}}", str(v))
@@ -60,7 +74,7 @@ def main() -> None:
 
 
 TEMPLATE = r"""<title>双图微步调度实验</title>
-<meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法与 E1–E9 实验结果">
+<meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法、E1–E9 实验结果与 ns-3 物理层验证（E10）">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
@@ -175,10 +189,11 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
 <header>
   <div class="eyebrow">paper1-next · UAV/FANET MAC 调度 · 实验报告</div>
   <h1>双图微步调度：定稿方法与测试集结果</h1>
-  <p class="lede">在从未使用过的测试集上，定稿方法在 5 个场景族中都没有比“最长队列优先”少送包，平均时延低 {{delay_lo}}–{{delay_hi}}%，p95 时延低 {{p95_lo}}–{{p95_hi}}%。在更密、更大、更拥堵或信道有误差的场景中，最终交付率还高出 {{dr_hard_lo}}–{{dr_hard_hi}} 个百分点。</p>
+  <p class="lede">在从未使用过的测试集上，定稿方法在 5 个场景族中都没有比“最长队列优先”少送包，平均时延低 {{delay_lo}}–{{delay_hi}}%，p95 时延低 {{p95_lo}}–{{p95_hi}}%。在更密、更大、更拥堵或信道有误差的场景中，最终交付率还高出 {{dr_hard_lo}}–{{dr_hard_hi}} 个百分点。在 ns-3 包级物理层上重跑 {{e10_episodes}} 个新测试场景，这些结论不变。</p>
   <div class="meta">
     <span>测试：{{episodes}} 个场景 × 5 个场景族，排空 {{drain}} 周期</span>
     <span>主方法 {{seeds_main}} 个训练种子</span>
+    <span>ns-3 验证：{{e10_episodes}} 个新场景 × 2 个场景族</span>
     <span>代码 <code>{{commit}}</code></span>
     <span>生成于 {{built}}</span>
   </div>
@@ -190,6 +205,7 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <li><strong>可靠性不劣于基线，时延显著更低。</strong>预先登记的判定在 5 个场景族中全部成立：交付率配对差的 95% 置信区间下界都不低于 −0.5 个百分点，平均时延和 p95 时延的差都显著小于 0。默认场景下交付率差为 {{dr_default}} 个百分点（下界 {{dr_default_lo}}）。</li>
     <li><strong>条件越难，优势越大。</strong>在 4 个困难场景族中，交付率和时延同时改善。这些场景都没有参与训练，属于零样本泛化。</li>
     <li><strong>模仿预热是必要的，改进来自 PPO 微调。</strong>从零训练的 PPO 靠大量丢包换取低时延（默认场景交付率 {{pure_test_default}}，基线 {{lq_test_default}}）。只模仿、不做 PPO 的模型与教师持平。</li>
+    <li><strong>在 ns-3 物理层上成立。</strong>用 ns-3 的真实信号叠加、Shannon 判决和帧内连续运动执行同一批计划，定稿方法的优势与训练环境中几乎相同（交付率差：默认场景 {{e10_dr_default}} 个百分点，下界 {{e10_dr_default_lo}}；高负载 {{e10_dr_high}} 个百分点）。满足完整 SINR 的策略在两种执行下的交付率相差不超过 {{e10_fid_max}} 个百分点，物理层误包率不超过 {{e10_per_max}}%（图 3）。</li>
     <li><strong>尾部时延仍有差距。</strong>HOL 加权基线的 p95 时延更低，但交付率显著更低。按“交付率优先”的原则，定稿方法更合适。</li>
   </ul>
 
@@ -215,6 +231,22 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <summary>查看该场景族的完整数据表</summary>
     <div class="table-wrap"><table id="means-table"></table></div>
   </details>
+</section>
+
+<section>
+  <h2>ns-3 物理层验证（E10）</h2>
+  <p class="prose">训练环境按“每周期完整累计 SINR、整窗同时发送、周期内信道冻结”来判定链路是否成功。E10 把同一批计划交给 ns-3.48 执行，检验这套判定是否可靠：DATA 帧经 Spectrum 信道发送，干扰随各链路开始和结束实时变化，由 Shannon 误码模型判决，计入帧头和传播时延；节点在周期内连续运动，每个包开始接收时按当前距离重算信道；送达由集中式控制面确认。测试集取 {{e10_episodes}} 个此前没用过的场景，排空 {{e10_drain}} 周期，每个场景用两种执行环境各跑一遍。</p>
+  <figure id="fig-e10">
+    <p class="fig-title">图 3　定稿方法相对 longest_queue 的优势：训练环境与 ns-3 对比</p>
+    <p class="fig-sub">同一批 {{e10_episodes}} 个新测试场景；点为均值，横线为 95% 置信区间。每个场景先对 5 个训练种子取平均，再配对。</p>
+    <div class="legend"><span><i class="key-dot"></i>ns-3 物理层执行</span><span><i class="key-dot" style="background:var(--context)"></i>训练用轻量环境</span></div>
+    <div class="panels" id="e10-forest"></div>
+    <figcaption><b>读法：</b>同一场景的两行几乎重合，说明优势不是训练环境的产物。交付率向右为好，时延向左为好。</figcaption>
+  </figure>
+  <h3>执行保真度：同一策略在 ns-3 与训练环境中的差别</h3>
+  <p class="prose">正向对照故意只检查两两干扰、忽略累计干扰。它在 ns-3 中整链失败 {{e10_ctrl_failed}}%，物理层误包率 {{e10_ctrl_per}}%，交付率 {{e10_ctrl_dr}}（完整 SINR 的 longest_queue 为 {{e10_lq_dr}}）。这说明 ns-3 能发现违反干扰约束的计划；训练环境对这类失败的判定也与 ns-3 一致。</p>
+  <div class="table-wrap"><table id="e10-table"></table></div>
+  <p class="note">交付率差 = ns-3 − 轻量环境，单位为个百分点，方括号内为 95% 置信区间。误包率 = ns-3 中接收失败的 DATA 帧占全部发送帧的比例。预先登记的保真度标准：交付率差的置信区间落在 ±1 个百分点内，且误包率 ≤ 1%。</p>
 </section>
 
 <section>
@@ -245,7 +277,7 @@ flowchart LR
 
 <section>
   <h2>研究过程</h2>
-  <p class="prose">从 E5 起，每一轮实验的方案和判定规则都在看到结果之前写进文档并提交。测试集只在最后使用了一次（E9）。</p>
+  <p class="prose">从 E5 起，每一轮实验的方案和判定规则都在看到结果之前写进文档并提交。测试集在 E9 使用了一次；E10 另取了一批没用过的测试场景。</p>
   <div class="timeline">
     <div class="step"><div class="id">E1</div><div><h3>首次训练 <span class="tag">开发集</span></h3>
       <p>PPO 按奖励明显优于基线，但分项显示它靠多丢包压低了队列和时延分项。</p>
@@ -261,7 +293,7 @@ flowchart LR
       <p class="out">→ 确立“模仿预热 + 微调 + 可靠性优先选择”的训练协议，丢包惩罚取 λ = 20。</p></div></div>
     <div class="step"><div class="id">E6</div><div><h3>消融（默认场景与困难场景）</h3>
       <p>完整累计 SINR 约束和直接链路特征通路不可缺少。交互图主要降低时延，通信图消息传递主要提高交付率。门控求和摘要去掉后交付率不变、时延更低。</p>
-      <p class="out">→ 见图 4。</p></div></div>
+      <p class="out">→ 见图 5。</p></div></div>
     <div class="step"><div class="id">E7</div><div><h3>零样本泛化</h3>
       <p>6 种未见条件中，可靠性全部不劣于基线；在更难的条件下，交付率和时延同时改善。其中“24 节点同密度”变体曾误设为 424 m，已更正为 367.4 m 并补评。</p>
       <p class="out">→ 重负载评估改用 1000 周期排空。</p></div></div>
@@ -270,13 +302,16 @@ flowchart LR
       <p class="out">→ 经用户确认，定稿方法不使用已选摘要；其余实现保留为可切换的对照。</p></div></div>
     <div class="step"><div class="id">E9</div><div><h3>测试集最终评估 <span class="tag">测试集</span></h3>
       <p>5 个训练种子，{{episodes}} 个测试场景 × 5 个场景族，排空 {{drain}} 周期，预先登记的全部主要判定成立（图 1、图 2）。</p></div></div>
+    <div class="step"><div class="id">E10</div><div><h3>ns-3 物理层验证 <span class="tag">新测试场景</span></h3>
+      <p>执行规则按本项目的方法自定：DATA 走真实物理层，集中式确认，帧内连续运动。开跑前修正了带宽取值差 1 字节的问题，以及评估时切换后端会丢失路由参数的问题。</p>
+      <p class="out">→ 预先登记的 5 项判定全部满足（图 3）。</p></div></div>
   </div>
 </section>
 
 <section>
   <h2>训练过程</h2>
   <figure id="fig-curves">
-    <p class="fig-title">图 3　训练中的开发集评估</p>
+    <p class="fig-title">图 4　训练中的开发集评估</p>
     <p class="fig-sub">每 25 次迭代在开发集的 8 个场景上评估一次（排空 250 周期）。圆点为按固定规则选中的检查点。</p>
     <div class="legend">
       <span><i class="key-line"></i>定稿方法（5 个种子）</span>
@@ -292,14 +327,14 @@ flowchart LR
 <section>
   <h2>消融与摘要改进</h2>
   <figure id="fig-heat">
-    <p class="fig-title">图 4　去掉或替换部件后的变化（相对当时的完整模型，含门控求和摘要）</p>
+    <p class="fig-title">图 5　去掉或替换部件后的变化（相对当时的完整模型，含门控求和摘要）</p>
     <p class="fig-sub">E6 与 E6b，开发集第 16–47 个场景，每组 3 个训练种子取平均。着色表示差异显著：蓝色为更好，红色为更差；灰色为不显著。</p>
     <div class="controls" role="group" aria-label="选择指标" id="heat-buttons"></div>
     <div class="table-wrap"><table class="heat" id="heat-table"></table></div>
     <div class="swatches"><span><i style="background:color-mix(in oklab,var(--pos) 45%,var(--surface))"></i>显著更好</span><span><i style="background:color-mix(in oklab,var(--neg) 45%,var(--surface))"></i>显著更差</span><span><i style="background:var(--surface);border:1px solid var(--rule)"></i>不显著</span></div>
   </figure>
   <figure id="fig-e8">
-    <p class="fig-title">图 5　已选摘要的两种改进方案（相对“无摘要”）</p>
+    <p class="fig-title">图 6　已选摘要的两种改进方案（相对“无摘要”）</p>
     <p class="fig-sub">E8，判定规则：5 个场景的交付率下界都 ≥ −0.5 个百分点，且平均时延至少在 3 个场景显著更低、在任何场景都不显著更高。两种方案都未通过。</p>
     <div class="controls" role="group" aria-label="选择指标" id="e8-buttons"></div>
     <div class="table-wrap"><table class="heat" id="e8-table"></table></div>
@@ -310,7 +345,7 @@ flowchart LR
   <h2>局限</h2>
   <ul class="claims">
     <li>只在一个场景族上训练（16 节点、300 m、理想信道、单速率单信道）。困难条件的结果属于零样本泛化。</li>
-    <li>只在 Python 轻量环境中评估：同步时序，没有控制时延和报告丢失。无线执行效果需要在 ns-3 上验证。</li>
+    <li>ns-3 验证覆盖了包级物理层和帧内运动，但没有覆盖空口 ACK、控制信道时延和报告丢失、小尺度衰落和多速率；ns-3 只跑了默认和高负载两个场景族。时序仍是同步的。</li>
     <li>环境语义与研究方案第 19 版有两处差异：路由变化后重新安置旧队列；等待区恢复时，若目标队列已满则继续等待。详见 <code>docs/decisions.md</code>。</li>
     <li>比较没有做多重校正。测试集已使用一次，之后的方法调整需要新的独立测试集。</li>
   </ul>
@@ -319,8 +354,10 @@ flowchart LR
 <pre class="cmd"><code>.venv/bin/fanet-next train --config configs/protocol_final.toml --set seed=0 --run-dir results/runs/final-s0
 .venv/bin/fanet-next select --run-dir results/runs/final-s0
 .venv/bin/python tools/confirm.py --spec configs/experiments/e9_test.json
+tools/ns3/setup.sh    # 构建 ns-3.48 + ns3-ai + 本项目的 fanet-scheduler 模块
+.venv/bin/python tools/e10_ns3.py --spec configs/experiments/e10_ns3.json
 .venv/bin/python tools/build_report.py</code></pre>
-  <p class="note">实验记录：<code>docs/experiments.md</code>（E1–E9）；实现决定：<code>docs/decisions.md</code>；已知问题：<code>docs/known-issues.md</code>。</p>
+  <p class="note">实验记录：<code>docs/experiments.md</code>（E1–E10）；实现决定：<code>docs/decisions.md</code>；已知问题：<code>docs/known-issues.md</code>。</p>
 </section>
 </div>
 
@@ -507,8 +544,53 @@ function heat(tableId, buttonsId, rowsData, rowNames, scenIds){
   render();
 }
 
+/* ---------- figure 3: E10 advantage in both executors ---------- */
+const E10 = DATA.e10;
+function drawE10(){
+  const host=document.getElementById("e10-forest"), fig=document.getElementById("fig-e10");
+  const rows=[]; for(const s of E10.scenarios) for(const [x,lab,ns] of [["ns3","ns-3",true],["lightweight","轻量",false]]) rows.push({s, x, ns, label:`${s.label} · ${lab}`});
+  const panels=makePanels(host, FOREST.map(m=>[m.title, `${m.unit}　${m.better}`]));
+  FOREST.forEach((m,pi)=>{ const panel=panels[pi];
+    const W=Math.max(panel.clientWidth,260), rowH=30, top=18, bottom=26, labW=104, valW=52, H=top+rowH*rows.length+bottom+8;
+    const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,height:H,role:"img","aria-label":`${m.title}：两种执行环境中的配对差`},panel);
+    const ds=rows.map(r=>r.s.adv[r.x][m.key]);
+    let lo=Math.min(0,...ds.map(d=>d.lo))*m.scale, hi=Math.max(0,...ds.map(d=>d.hi))*m.scale; const pad=(hi-lo)*0.08; lo-=pad; hi+=pad;
+    const x0=labW, x1=W-valW, X=v=>x0+(v-lo)/(hi-lo)*(x1-x0);
+    const Yr=i=>top+rowH*i+rowH/2+(i>=2?8:0);
+    const g=el("g",{class:"grid"},svg);
+    for(const t of niceTicks(lo,hi,W<420?3:4)){ el("line",{x1:X(t),x2:X(t),y1:top-6,y2:H-bottom+4},g); txt(svg,X(t),H-bottom+16,t.toFixed(Math.abs(t)<1&&t!==0?(m.scale===1?1:0):0).replace(/^-?0\.0$/,"0"),"tick","middle"); }
+    el("line",{x1:X(0),x2:X(0),y1:top-8,y2:H-bottom+4,class:"zero"},svg);
+    rows.forEach((r,i)=>{ const d=ds[i], y=Yr(i), color=r.ns?"var(--accent)":"var(--context)";
+      txt(svg,0,y,r.label,"lbl");
+      el("line",{x1:X(d.lo*m.scale),x2:X(d.hi*m.scale),y1:y,y2:y,stroke:color,"stroke-width":2,"stroke-linecap":"round"},svg);
+      el("circle",{cx:X(d.m*m.scale),cy:y,r:r.ns?5:4.5,fill:color,stroke:"var(--surface)","stroke-width":2},svg);
+      txt(svg,W,y,(d.m*m.scale>0?"+":"")+(d.m*m.scale).toFixed(m.dec),"val","end");
+      const hit=el("rect",{x:0,y:y-rowH/2,width:W,height:rowH,fill:"transparent",tabindex:0},svg);
+      const f=v=>(v*m.scale>0?"+":"")+(v*m.scale).toFixed(m.dec+1);
+      const show=e=>showTip(fig,e,`${r.label} · ${m.title}`,[["均值",`${f(d.m)} ${m.unit}`],["95% CI",`${f(d.lo)} … ${f(d.hi)}`]]);
+      hit.addEventListener("pointermove",show); hit.addEventListener("focus",()=>{const b=hit.getBoundingClientRect(); show({clientX:b.left+b.width/2,clientY:b.top});});
+      hit.addEventListener("pointerleave",()=>hideTip(fig)); hit.addEventListener("blur",()=>hideTip(fig));
+    });
+  });
+}
+function drawE10Table(){
+  const t=document.getElementById("e10-table"); clear(t);
+  const E10NAME={"主方法":"定稿方法","longest_queue":"longest_queue","hol_weighted":"hol_weighted","仅模仿":"仅模仿"}; E10NAME[E10.control]="正向对照：两两干扰 LQ";
+  const hr=t.createTHead().insertRow(); const c0=document.createElement("th"); c0.textContent="策略"; hr.appendChild(c0);
+  for(const s of E10.scenarios) for(const l of ["交付率差","误包率"]){ const c=document.createElement("th"); c.textContent=`${s.label} · ${l}`; hr.appendChild(c); }
+  const tb=t.createTBody(); const names=Object.keys(E10.scenarios[0].fid);
+  for(const n of names){ const r=tb.insertRow(); if(n===E10.main) r.className="main"; const a=r.insertCell(); a.textContent=E10NAME[n]||n;
+    for(const s of E10.scenarios){ const f=s.fid[n];
+      const c1=r.insertCell(), c2=r.insertCell();
+      if(!f){ c1.textContent="–"; c2.textContent="–"; continue; }
+      const d=f.delivery_ratio, pp=v=>(v*100>0?"+":"")+(v*100).toFixed(2);
+      c1.textContent=pp(d.m); const ci=document.createElement("span"); ci.className="ci"; ci.textContent=`[${pp(d.lo)}, ${pp(d.hi)}]`; c1.appendChild(ci);
+      c2.textContent=(f.per*100).toFixed(2)+"%"; } }
+}
+
 scenButtons();
-function drawAll(){ drawForest(); drawDots(); drawCurves(); }
+function drawAll(){ drawForest(); drawDots(); drawE10(); drawCurves(); }
+drawE10Table();
 drawAll();
 heat("heat-table","heat-buttons",DATA.ablations.table,DATA.ablations.components,DATA.ablations.scenarios);
 heat("e8-table","e8-buttons",DATA.e8.table,DATA.e8.candidates,DATA.e8.scenarios);
