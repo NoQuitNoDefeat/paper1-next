@@ -53,7 +53,7 @@ def paired(rows_a: list[dict], rows_b: list[dict], key: str) -> dict:
 
 def evaluate(cfg: dict, policy: Policy, *, split: str = "dev", episodes: int = 8,
              mode: str = "greedy", num_envs: int = 8, scenario: dict | None = None,
-             drain_cycles: int = 0, seed_offset: int = 0) -> dict:
+             drain_cycles: int = 0, seed_offset: int = 0, on_episode=None) -> dict:
     """Mean metrics plus per-episode rows; the same seeds give the same scenes for every policy."""
     scenario = scenario or eval_scenario(cfg, drain_cycles)
     envs = [build_env(cfg, run_id=f"eval-{split}-{i}", build_graph=policy.needs_graph,
@@ -62,7 +62,7 @@ def evaluate(cfg: dict, policy: Policy, *, split: str = "dev", episodes: int = 8
     if hasattr(policy, "seed") and not policy.learnable:
         policy.seed(12345)
     seeds = split_seeds(split, episodes, seed_offset)
-    rows = run_episodes(policy, envs, seeds, mode=mode)
+    rows = run_episodes(policy, envs, seeds, mode=mode, on_episode=on_episode)
     mean = merge_summaries(rows)
     for key in ("delivery_ratio", "e2e_delay_mean_s", "reward_mean"):
         vals = np.array([r[key] for r in rows], dtype=float)

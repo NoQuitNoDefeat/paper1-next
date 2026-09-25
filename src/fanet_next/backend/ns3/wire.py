@@ -190,9 +190,13 @@ def decode_value(data: bytes):
 
 
 def encode(
-    kind, run: str, seq: int, epoch: int, sampled_ns: int, digest: bytes, payload, capacity: int
+    kind, run: str, seq: int, epoch: int, sampled_ns: int, digest: bytes, payload, capacity: int,
+    *, encoded: bytes | None = None,
 ) -> bytes:
-    body = encode_value(payload, limit=capacity - HEADER.size)
+    """``encoded``: the payload's ``encode_value`` bytes when the caller already has them."""
+    body = encode_value(payload, limit=capacity - HEADER.size) if encoded is None else encoded
+    if len(body) > capacity - HEADER.size:
+        raise ValueError("wire payload exceeds configured byte capacity")
     if any(type(v) is not int for v in (seq, epoch, sampled_ns)) or not 0 <= seq < 2**64:
         raise ValueError("invalid message sequence/epoch")
     if not 0 <= epoch < 2**64 or not 0 <= sampled_ns < 2**63:

@@ -186,8 +186,9 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
                "metadata": dict.fromkeys(("feature_schema_sha256", "history_sha256",
                                           "reward_sha256", "checkpoint_sha256"))}
     if wireless is not None:
-        # private execution channel: the truth; with the ideal estimate it equals the observation
-        payload["wireless"] = {**wireless, "frames": [physical(k) for k in range(horizon + 1)]}
+        # the private execution channel is the scenario's own geometry, i.e. the observed
+        # physical input (ideal channel); ns-3 uses physical_inputs when "frames" is absent
+        payload["wireless"] = dict(wireless)
     else:
         payload["execution_profile"] = "full-sinr-v1"
     return Episode(payload=payload, period_ns=period_ns, horizon=horizon, packet_size=ps,

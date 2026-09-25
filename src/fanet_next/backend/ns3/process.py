@@ -27,6 +27,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_NS3_ROOT = PROJECT_ROOT / "simulator" / "ns-3-dev"
 
 
+MAX_EXCHANGE_SECONDS = 1800.0  # an INIT carries a whole episode (tens to hundreds of MB)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TransportConfig:
     ns3_root: Path = DEFAULT_NS3_ROOT
@@ -138,7 +141,9 @@ class Supervisor:
 
     def _io(self, size, deadline, outgoing=None):
         done = bytearray()
-        while len(done) < size:
+        sent = 0
+        view = memoryview(outgoing) if outgoing is not None else None  # no per-write copies
+        while (len(done) if outgoing is None else sent) < size:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ProtocolError("ns3-ai exchange exceeded wall-clock timeout")
@@ -152,10 +157,10 @@ class Supervisor:
                     raise ProtocolError("native worker exited before a complete response")
                 done.extend(data)
             elif w:
-                count = os.write(fd, outgoing[len(done):])
+                count = os.write(fd, view[sent:])
                 if count == 0:
                     raise ProtocolError("worker input pipe closed")
-                done.extend(b"\0" * count)
+                sent += count
             elif self.worker.poll() is not None or (
                 self.peer is not None and self.peer.poll() is not None
             ):
@@ -168,15 +173,19 @@ class Supervisor:
             raise ProtocolError("worker response exceeds capacity")
         return self._io(size, deadline)
 
-    def exchange(self, data: bytes) -> bytes:
+    def exchange(self, data: bytes, timeout: float | None = None) -> bytes:
+        """One request/response; ``timeout`` (default: the transport's) bounds the whole exchange."""
         if self._closed:
             raise ProtocolError("transport is closed")
         if not 0 < len(data) <= self.config.tx_capacity:
             raise ValueError("outgoing frame exceeds capacity")
-        deadline = time.monotonic() + self.config.timeout_seconds
+        timeout = self.config.timeout_seconds if timeout is None else float(timeout)
+        if not 0 < timeout <= MAX_EXCHANGE_SECONDS:
+            raise ValueError(f"exchange timeout must be within (0, {MAX_EXCHANGE_SECONDS}] s")
+        deadline = time.monotonic() + timeout
         try:
-            frame = struct.pack("<I", len(data)) + data
-            self._io(len(frame), deadline, frame)
+            self._io(4, deadline, struct.pack("<I", len(data)))
+            self._io(len(data), deadline, data)
             return self._read_frame(deadline)
         except BaseException as error:
             self._last_diagnostics = self.diagnostics()

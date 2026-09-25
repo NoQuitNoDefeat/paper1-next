@@ -6,20 +6,28 @@ Spectrum PHY with cumulative interference, Shannon decoding, frame overhead,
 propagation and continuous intra-cycle motion).  ns-3 jobs are split into seed
 shards so they run in parallel; the summary merges the shards.
 
-    .venv/bin/python tools/e10_ns3.py --spec configs/experiments/e10_ns3.json --parallel 9
-    .venv/bin/python tools/e10_ns3.py --spec ... --summary          # tables only
+    .venv/bin/python tools/e10_ns3.py --spec configs/experiments/e10_ns3.json --parallel 8
+    .venv/bin/python tools/e10_ns3.py --spec ... --status --watch 30  # progress board
+    .venv/bin/python tools/e10_ns3.py --spec ... --summary           # tables only
+
+Memory: an ns-3 job peaks at ~2.5 GiB while ns-3 parses an episode's INIT (~8 s)
+and then runs at ~0.5 GiB, so job starts are staggered (``--gap``).  A failed
+job is retried once (its log is kept as ``*.failed1.log``); rerunning the driver
+only runs shards whose output is missing.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import time
 from pathlib import Path
 
 import numpy as np
 
-from confirm import CLI, ROOT, ci, resolve, run_jobs, slug
+from confirm import CLI, ROOT, ci, resolve, slug
 
 KEYS = [("delivery_ratio", "交付率", "{:.4f}"), ("termination_ratio", "终止比例", "{:.4f}"),
         ("ontime_2s", "2s 送达", "{:.4f}"), ("e2e_delay_mean_s", "平均时延", "{:.3f}"),
@@ -85,6 +93,103 @@ def build_jobs(spec: dict) -> list[list[str]]:
                     cmd += [a for o in overrides for a in ("--set", o)]
                     jobs.append(cmd)
     return jobs
+
+
+def launch(jobs: list[list[str]], parallel: int, gap: float, log) -> None:
+    """Run jobs with at most ``parallel`` at once and starts ``gap`` seconds apart."""
+    queue = [(cmd, 0) for cmd in jobs]
+    running: dict[subprocess.Popen, tuple[list[str], int]] = {}
+    last = 0.0
+
+    def reap() -> None:
+        for proc, (cmd, attempt) in list(running.items()):
+            if proc.poll() is None:
+                continue
+            del running[proc]
+            out = cmd[cmd.index("--out") + 1]
+            if proc.returncode == 0:
+                log(f"finished {out}")
+                continue
+            log(f"FAILED (exit {proc.returncode}, attempt {attempt + 1}) {out}")
+            Path(f"{out}.eval.log").replace(f"{out}.failed{attempt + 1}.log")
+            if attempt == 0:
+                queue.append((cmd, 1))
+
+    while queue or running:
+        reap()
+        if queue and len(running) < parallel and time.time() - last >= gap:
+            cmd, attempt = queue.pop(0)
+            out = cmd[cmd.index("--out") + 1]
+            fh = open(f"{out}.eval.log", "w")
+            running[subprocess.Popen(cmd, cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT)] = (cmd, attempt)
+            last = time.time()
+            log(f"started {out}" + (" (retry)" if attempt else ""))
+        else:
+            time.sleep(2)
+
+
+def status(spec: dict) -> str:
+    """Read-only progress board from output files and per-episode log lines."""
+    out_dir = ROOT / spec["out"]
+    e = spec["eval"]
+    counts = {"done": 0, "running": 0, "failed": 0, "pending": 0}
+    episodes = {"ns3": [0, 0], "lightweight": [0, 0]}
+    lines = []
+    run_log = out_dir / "run.log"
+    starts = ([l for l in run_log.read_text().splitlines() if "evaluation jobs" in l]
+              if run_log.exists() else [])
+    t0 = time.mktime(time.strptime(starts[-1][:19], "%Y-%m-%d %H:%M:%S")) if starts else None
+    recent = 0  # ns-3 episodes finished since the latest driver launch
+    for executor, backend in sorted(spec["executors"].items(), key=lambda kv: kv[1] is None):
+        kind = "ns3" if backend else "lightweight"
+        for scenario in spec["scenarios"]:
+            for name, p in policies(spec).items():
+                if p.get("scenarios") and scenario not in p["scenarios"]:
+                    continue
+                cells = []
+                for args, f in result_files(spec, scenario, executor, name):
+                    total = int(args[args.index("--episodes") + 1])
+                    log = Path(f"{f}.eval.log")
+                    text = log.read_text(errors="replace") if log.exists() else ""
+                    done = sum(1 for l in text.splitlines() if l.startswith("episode "))
+                    if f.exists():
+                        state, done = "done", total
+                    elif "Traceback" in text:
+                        state = "failed"
+                    elif log.exists():
+                        state = "running"
+                    else:
+                        state = "pending"
+                    counts[state] += 1
+                    if kind == "ns3" and t0 and log.exists() and log.stat().st_mtime >= t0:
+                        recent += done
+                    episodes[kind][0] += done
+                    episodes[kind][1] += total
+                    mark = {"done": "✓", "failed": "✗", "pending": "·"}.get(state, "")
+                    cells.append(f"{done:>2}/{total}{mark}")
+                pad = 26 - sum(2 if ord(c) > 0x2E80 else 1 for c in name)  # CJK is double width
+                lines.append(f"{scenario:<10} {executor:<12} {name}{' ' * max(pad, 1)}" + "  ".join(cells))
+    pid_file = out_dir / "driver.pid"
+    alive = False
+    if pid_file.exists():
+        try:
+            os.kill(int(pid_file.read_text()), 0)
+            alive = True
+        except (OSError, ValueError):
+            pass
+    done, total = episodes["ns3"]
+    head = [f"E10 进度  {time.strftime('%Y-%m-%d %H:%M:%S')}  驱动{'运行中' if alive else '未运行'}",
+            f"ns-3 回合 {done}/{total}（{100 * done / max(total, 1):.1f}%），轻量回合 "
+            f"{episodes['lightweight'][0]}/{episodes['lightweight'][1]}",
+            f"分片：完成 {counts['done']}，运行 {counts['running']}，失败 {counts['failed']}，"
+            f"等待 {counts['pending']}"]
+    if alive and t0 and recent:
+        rate = recent / max(time.time() - t0, 1)
+        head.append(f"预计剩余：约 {(total - done) / rate / 3600:.1f} 小时"
+                    f"（本次启动以来 {rate * 3600:.0f} 回合/小时）")
+    head.append(f"每格：已完成回合/分片回合数（✓ 完成，✗ 失败，· 未开始）；种子偏移 {e['seed_offset']}，"
+                f"排空 {e['drain']} 周期")
+    return "\n".join(head + [""] + lines)
 
 
 # ------------------------------------------------------------------- summary
@@ -187,12 +292,22 @@ def summarise(spec: dict) -> str:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--spec", required=True)
-    p.add_argument("--parallel", type=int, default=9)
+    p.add_argument("--parallel", type=int, default=8)
+    p.add_argument("--gap", type=float, default=20.0, help="seconds between job starts")
     p.add_argument("--summary", action="store_true")
+    p.add_argument("--status", action="store_true", help="progress board (read-only)")
+    p.add_argument("--watch", type=float, default=0.0, help="with --status: refresh every N s")
     a = p.parse_args()
     spec = json.loads(Path(a.spec).read_text())
     out = ROOT / spec["out"]
     out.mkdir(parents=True, exist_ok=True)
+    if a.status:
+        while True:
+            board = status(spec)
+            print("\033[2J\033[H" + board if a.watch else board, flush=True)
+            if not a.watch:
+                return
+            time.sleep(a.watch)
 
     def log(msg: str) -> None:
         line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
@@ -201,9 +316,10 @@ def main() -> None:
             fh.write(line + "\n")
 
     if not a.summary:
+        (out / "driver.pid").write_text(str(os.getpid()))
         jobs = build_jobs(spec)
         log(f"{len(jobs)} evaluation jobs")
-        run_jobs([resolve(j) for j in jobs], a.parallel, log)
+        launch([resolve(j) for j in jobs], a.parallel, a.gap, log)
         log("all jobs finished")
     text = summarise(spec)
     (out / "summary.md").write_text(text + "\n")

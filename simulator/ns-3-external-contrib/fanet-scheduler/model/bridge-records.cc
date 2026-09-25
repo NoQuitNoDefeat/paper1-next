@@ -332,35 +332,45 @@ ReadInitialization(const Value& v)
     result.metadata = v.At("metadata");
     if (radio)
     {
-        auto settings = v.At("wireless");
+        const auto& settings = v.At("wireless");
+        const auto& fields = std::get<Map>(settings.data);
         const bool actualAck = settings.At("profile").S() == "transaction-ack-v1";
-        if (std::get<Map>(settings.data).contains("motion"))
+        const bool moving = fields.contains("motion");
+        // paper1-next: without "frames" the private execution channel is the observed physical
+        // input (ideal channel), which is then not sent and held twice.
+        const bool ownFrames = fields.contains("frames");
+        std::set<std::string> keys{"profile", "center_hz", "bandwidth_hz", "propagation_ns",
+                                   "overhead_bytes"};
+        if (ownFrames)
         {
-            const auto& moving = settings.At("motion");
-            moving.Object({"profile", "low_m", "high_m", "reference_distance_m",
+            keys.insert("frames");
+        }
+        if (moving)
+        {
+            keys.insert("motion");
+        }
+        if (actualAck)
+        {
+            keys.insert({"ack_bytes", "ack_rate_bytes_per_second", "turnaround_ns"});
+        }
+        Require(fields.size() == keys.size() &&
+                    std::ranges::all_of(keys, [&](const auto& k) { return fields.contains(k); }),
+                "missing/unknown wireless fields");
+        if (moving)
+        {
+            const auto& motion = settings.At("motion");
+            motion.Object({"profile", "low_m", "high_m", "reference_distance_m",
                            "path_loss_exponent", "sinr_threshold"});
-            Require(moving.At("profile").S() == "continuous-motion-frame-quasistatic-v1",
+            Require(motion.At("profile").S() == "continuous-motion-frame-quasistatic-v1",
                     "unknown moving channel profile");
-            result.radioMotion = MotionSettings{ReadVector(moving.At("low_m")),
-                                                 ReadVector(moving.At("high_m")),
-                                                 moving.At("reference_distance_m").D(),
-                                                 moving.At("path_loss_exponent").D(),
-                                                 moving.At("sinr_threshold").D(), {}};
-            std::get<Map>(settings.data).erase("motion");
+            result.radioMotion = MotionSettings{ReadVector(motion.At("low_m")),
+                                                 ReadVector(motion.At("high_m")),
+                                                 motion.At("reference_distance_m").D(),
+                                                 motion.At("path_loss_exponent").D(),
+                                                 motion.At("sinr_threshold").D(), {}};
         }
         Require(actualAck || settings.At("profile").S() == "ideal-spectrum-v1",
                 "unknown radio profile");
-        if (actualAck)
-        {
-            settings.Object({"profile", "center_hz", "bandwidth_hz", "propagation_ns",
-                             "overhead_bytes", "frames", "ack_bytes",
-                             "ack_rate_bytes_per_second", "turnaround_ns"});
-        }
-        else
-        {
-            settings.Object({"profile", "center_hz", "bandwidth_hz", "propagation_ns",
-                             "overhead_bytes", "frames"});
-        }
         result.radioSettings = RadioSettings{settings.At("center_hz").D(),
                                              settings.At("bandwidth_hz").D(),
                                              settings.At("propagation_ns").I(),
@@ -372,11 +382,11 @@ ReadInitialization(const Value& v)
             result.radioSettings->ackRate = settings.At("ack_rate_bytes_per_second").U();
             result.radioSettings->turnaroundNs = settings.At("turnaround_ns").I();
         }
-        Require(settings.At("frames").Array().size() == result.physical.size(),
-                "incomplete private radio frames");
+        const auto& sources = ownFrames ? settings.At("frames").Array() : result.physical;
+        Require(sources.size() == result.physical.size(), "incomplete private radio frames");
         for (std::size_t i = 0; i < result.physical.size(); ++i)
         {
-            const auto& source = settings.At("frames").Array()[i];
+            const auto& source = sources[i];
             ValidatePhysical(source, config, config.start + i * config.period);
             RadioFrame frame;
             frame.at = source.At("at_ns").I();

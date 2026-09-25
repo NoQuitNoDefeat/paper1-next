@@ -60,10 +60,11 @@ class Ns3Backend(Backend):
         self._sup: Supervisor | None = None
 
     # --------------------------------------------------------------- transport
-    def _request(self, kind, expected, epoch, at, payload, *, next_epoch=False):
+    def _request(self, kind, expected, epoch, at, payload, *, next_epoch=False, encoded=None,
+                 timeout=None):
         data = encode(kind, self._run, self._seq, epoch, at, self._digest, payload,
-                      self._transport.tx_capacity)
-        resp = self._sup.exchange(data)
+                      self._transport.tx_capacity, encoded=encoded)
+        resp = self._sup.exchange(data, timeout)
         actual, run, seq, r_epoch, r_at, digest, body = decode(resp, self._transport.rx_capacity)
         if run != self._run or seq != self._seq or digest != self._digest:
             raise ProtocolError("response run/sequence/config identity mismatch")
@@ -97,6 +98,7 @@ class Ns3Backend(Backend):
         physical = max(len(encode_value(p)) for p in self._ep.payload["physical_inputs"])
         tx = _mib(len(body) + HEADER.size + 4096)
         rx = _mib(result_capacity(self._ep.payload, physical) + HEADER.size + 4096)
+        self._ep.payload = None  # the encoded body is all that is sent; free the tree first
         shm = _mib(tx + rx + 8192)
         kwargs = {"ns3_root": self.ns3_root} if self.ns3_root else {}
         self._transport = TransportConfig(shm_bytes=shm, tx_capacity=tx, rx_capacity=rx,
@@ -115,9 +117,13 @@ class Ns3Backend(Backend):
                 raise ProtocolError("ns-3 build identity or capacities do not match this project")
             self.build = {k: ready[k] for k in ("source_sha256", "ns3_commit", "ns3_ai_commit",
                                                  "compiler")}
-            state = self._request(Kind.INIT, Kind.STATE, 0, 0, self._ep.payload)
+            # the INIT carries the whole episode: allow ~1 s per MB on top of the cycle timeout
+            state = self._request(Kind.INIT, Kind.STATE, 0, 0, None, encoded=body,
+                                  timeout=self.timeout + len(body) / 1e6)
         except Exception as error:  # noqa: BLE001
             raise self._fail(error) from error
+        finally:
+            del body  # future inputs now live only in ns-3
         self.cycle = 0
         self._obs = state["observation"]
         self.report = report_from(self._obs, self._ep, run_id=run_id, episode=episode)

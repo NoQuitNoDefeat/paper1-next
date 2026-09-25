@@ -74,9 +74,14 @@ def _cmd_eval(args) -> None:
             policy = build_policy(cfg, "ppo", model=model)
         else:
             policy = build_policy(cfg, name)
+        def progress(row, done, total, name=name, t0=time.time()):
+            print(f"episode {done}/{total} {name} seed={row['seed']} "
+                  f"delivery={row['delivery_ratio']:.4f} delay={row['e2e_delay_mean_s']:.3f} "
+                  f"elapsed={time.time() - t0:.0f}s", flush=True)
+
         res = evaluate(cfg, policy, split=args.split, episodes=args.episodes, mode=args.mode,
                        num_envs=args.num_envs, drain_cycles=args.drain,
-                       seed_offset=args.seed_offset)
+                       seed_offset=args.seed_offset, on_episode=progress)
         table[name] = res
         m = res["mean"]
         print(f"{name:>16}: " + "  ".join(f"{k.replace('_mean', '')}={m[k]:.4g}" for k in KEYS if k in m),

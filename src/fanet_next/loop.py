@@ -79,8 +79,10 @@ class SchedulingEnv:
 
 
 def run_episodes(policy: Policy, envs: list[SchedulingEnv], seeds: list[int], *,
-                 mode: str = "greedy") -> list[dict]:
-    """Run one episode per seed, stepping ``len(envs)`` environments in lockstep."""
+                 mode: str = "greedy", on_episode=None) -> list[dict]:
+    """Run one episode per seed, stepping ``len(envs)`` environments in lockstep.
+
+    ``on_episode(summary, done, total)`` is called as each episode finishes (progress)."""
     summaries: list[dict] = []
     queue = list(enumerate(seeds))
     active: dict[int, int] = {}  # env slot -> seed index
@@ -103,6 +105,8 @@ def run_episodes(policy: Policy, envs: list[SchedulingEnv], seeds: list[int], *,
                 summary["seed"] = seeds[active[s]]
                 results[active[s]] = summary
                 del active[s]
+                if on_episode is not None:
+                    on_episode(summary, len(results), len(seeds))
                 if queue:
                     i, sd = queue.pop(0)
                     envs[s].reset(sd, episode=i)
