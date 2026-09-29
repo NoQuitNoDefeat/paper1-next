@@ -141,7 +141,7 @@ def status(spec: dict) -> str:
     starts = ([l for l in run_log.read_text().splitlines() if "evaluation jobs" in l]
               if run_log.exists() else [])
     t0 = time.mktime(time.strptime(starts[-1][:19], "%Y-%m-%d %H:%M:%S")) if starts else None
-    recent = 0  # ns-3 episodes finished since the latest driver launch
+    recent = {"ns3": 0, "lightweight": 0}  # episodes finished since the latest driver launch
     for executor, backend in sorted(spec["executors"].items(), key=lambda kv: kv[1] is None):
         kind = "ns3" if backend else "lightweight"
         for scenario in spec["scenarios"]:
@@ -164,8 +164,8 @@ def status(spec: dict) -> str:
                     else:
                         state = "pending"
                     counts[state] += 1
-                    if kind == "ns3" and t0 and log.exists() and log.stat().st_mtime >= t0:
-                        recent += done
+                    if t0 and log.exists() and log.stat().st_mtime >= t0:
+                        recent[kind] += done
                     episodes[kind][0] += done
                     episodes[kind][1] += total
                     mark = {"done": "✓", "failed": "✗", "pending": "·"}.get(state, "")
@@ -180,15 +180,18 @@ def status(spec: dict) -> str:
             alive = True
         except (OSError, ValueError):
             pass
-    done, total = episodes["ns3"]
-    head = [f"E10 进度  {time.strftime('%Y-%m-%d %H:%M:%S')}  驱动{'运行中' if alive else '未运行'}",
-            f"ns-3 回合 {done}/{total}（{100 * done / max(total, 1):.1f}%），轻量回合 "
-            f"{episodes['lightweight'][0]}/{episodes['lightweight'][1]}",
+    kind = "ns3" if episodes["ns3"][1] else "lightweight"  # the executor that dominates run time
+    done, total = episodes[kind]
+    head = [f"{spec['name'].split('（')[0]} 进度  {time.strftime('%Y-%m-%d %H:%M:%S')}  "
+            f"驱动{'运行中' if alive else '未运行'}",
+            f"ns-3 回合 {episodes['ns3'][0]}/{episodes['ns3'][1]}，轻量回合 "
+            f"{episodes['lightweight'][0]}/{episodes['lightweight'][1]}"
+            f"（按{'ns-3' if kind == 'ns3' else '轻量'}回合计 {100 * done / max(total, 1):.1f}%）",
             f"分片：完成 {counts['done']}，运行 {counts['running']}，失败 {counts['failed']}，"
             f"等待 {counts['pending']}"]
-    if alive and t0 and recent:
-        rate = recent / max(time.time() - t0, 1)
-        head.append(f"预计剩余：约 {(total - done) / rate / 3600:.1f} 小时"
+    if alive and t0 and recent[kind]:
+        rate = recent[kind] / max(time.time() - t0, 1)
+        head.append(f"预计剩余（粗略，任务轻重不一）：约 {(total - done) / rate / 3600:.1f} 小时"
                     f"（本次启动以来 {rate * 3600:.0f} 回合/小时）")
     head.append(f"每格：已完成回合/分片回合数（✓ 完成，✗ 失败，· 未开始）；种子偏移 {e['seed_offset']}，"
                 f"排空 {e['drain']} 周期")
