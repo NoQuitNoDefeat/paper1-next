@@ -64,13 +64,17 @@ def run_rows(root: Path) -> list[dict]:
             continue
         total = int(m.get("training", {}).get("iterations", 0))
         logs = _read_jsonl(run / "train_log.jsonl")
-        its = [e for e in logs if "ppo/entropy" in e]
+        # primary runs log "ppo/*"; learned-baseline runs (train-baseline) log "progress"
+        its = [e for e in logs if "ppo/entropy" in e or ("progress" in e and "iteration" in e)]
         evals = _read_jsonl(run / "eval_log.jsonl")
         last = its[-1] if its else {}
         done = last.get("iteration", 0)
         recent = its[-10:]
-        per_it = (sum(e["collect_s"] + e["update_s"] for e in recent) / len(recent)) if recent else float("nan")
+        per_it = (sum(e.get("seconds", e.get("collect_s", 0) + e.get("update_s", 0)) for e in recent)
+                  / len(recent)) if recent else float("nan")
         log_file = run.parent / f"{run.name}.log"
+        if not log_file.exists():
+            log_file = run.parent / f"{run.name}.train.log"
         text = log_file.read_text(errors="ignore") if log_file.exists() else ""
         errors = sum(len(e.get("errors") or []) for e in its) + text.count("Traceback")
         is_running = str(run.resolve()) in running
@@ -89,7 +93,7 @@ def run_rows(root: Path) -> list[dict]:
             "run": str(run.relative_to(root)), "state": state, "done": done, "total": total,
             "per_it": per_it, "eta": (total - done) * per_it if is_running else float("nan"),
             "reward": last.get("reward_raw_mean"), "ev": last.get("ppo/explained_var"),
-            "entropy": last.get("ppo/entropy"), "dev_it": ev.get("iteration"),
+            "entropy": last.get("ppo/entropy", last.get("entropy")), "dev_it": ev.get("iteration"),
             "dev_dr": ev.get("dev/delivery_ratio"), "dev_delay": ev.get("dev/e2e_delay_mean_s"),
             "dev_ontime": ev.get("dev/ontime_1s"), "errors": errors, "selected": selected,
             "log": str(log_file) if log_file.exists() else "",
