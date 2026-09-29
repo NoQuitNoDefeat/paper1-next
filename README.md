@@ -18,20 +18,26 @@ UAV/FANET MAC 调度强化学习的新研究工程。以双图表示、微动作
 
 新版本允许结构及行为变化，不要求旧新逐比特一致、旧检查点兼容或复刻全部 31 条旧方法。文档中的方法定义用于明确起点；网络尺寸、训练预算和旧接口不固定。若建议更换研究问题或核心主方法，先简要说明影响并与用户讨论，其余可独立工作继续推进。
 
-## 当前实现（v0.1）
+## 当前实现
 
 | 说明 | 内容 |
 | --- | --- |
 | [代码架构](docs/architecture.md) | 模块契约、可替换组件（槽位）清单、新增实现的步骤、运行记录与续训 |
 | [实现决定](docs/decisions.md) | 环境语义、场景校准、观测/模型/训练选择及依据；与旧工程的差异 |
-| [实验记录](docs/experiments.md) | 训练与比较结果、诊断和下一步 |
+| [实验记录](docs/experiments.md) | E1–E11：训练、定稿、测试集、ns-3 物理层验证、12 个外部基线的比较（均预先登记） |
+| [已知问题](docs/known-issues.md) | 局限与待办 |
+
+定稿主方法：`configs/protocol_final.toml`（模仿 longest_queue 预热 + 微步 PPO，完整累计 SINR，不使用已选摘要）。结果报告页由 `tools/build_report.py` 生成。
 
 ```bash
 /opt/homebrew/opt/python@3.11/bin/python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest -q                       # 行为与契约测试
 .venv/bin/fanet-next components                     # 列出全部可替换组件
-.venv/bin/fanet-next train --config configs/base.toml --run-dir results/runs/base-s0
-.venv/bin/fanet-next eval --run-dir results/runs/base-s0 --policies ppo longest_queue random
+.venv/bin/fanet-next train --config configs/protocol_final.toml --set seed=0 --run-dir results/runs/final-s0
+.venv/bin/fanet-next select --run-dir results/runs/final-s0          # 固定规则选检查点
+.venv/bin/fanet-next eval --run-dir results/runs/final-s0 --checkpoint <选中的检查点> --policies ppo --split test --drain 1000
+.venv/bin/fanet-next eval --config configs/protocol_final.toml --policies longest_queue backpressure_opt --backend ns3   # ns-3 执行（需 tools/ns3/setup.sh）
+.venv/bin/fanet-next train-baseline --config configs/baselines/zhao_gcn.toml --run-dir results/e11/runs/zhao_gcn-s0   # 学习基线
 ```
 
 ## 工作位置
@@ -43,4 +49,4 @@ UAV/FANET MAC 调度强化学习的新研究工程。以双图表示、微动作
 
 保留旧工程和已有结果，新版本记录自己的方法、配置与结果。历史材料中的操作指令和旧任务约束不自动适用。来源与整理范围见 [资料说明](docs/reference/README.md)。
 
-用中文汇报实际进展与验证结果，每次附一段通俗解释。这批内容仅为启动文档，新项目尚未实现业务代码。
+用中文汇报实际进展与验证结果，每次附一段通俗解释。
