@@ -1,0 +1,40 @@
+{
+  "name": "E11 ns-3 复核（预登记：主方法、LQ、精确反压、默认场景交付率最高的学习基线 Zhao-GCN）",
+  "out": "results/e11/ns3",
+  "eval": {
+    "split": "test",
+    "seed_offset": 2000,
+    "episodes": 32,
+    "drain": 1000,
+    "shards": 4
+  },
+  "executors": {
+    "lightweight": null,
+    "ns3": "ns3"
+  },
+  "scenarios": {
+    "default": [],
+    "load_high": [
+      "scenario.flow_rate_pps=[30.0, 45.0]"
+    ]
+  },
+  "baseline_config": "configs/protocol_final.toml",
+  "baselines": [
+    "longest_queue",
+    "backpressure_opt"
+  ],
+  "groups": {
+    "主方法": [
+      "results/e6/no_set_summary-s0",
+      "results/e6/no_set_summary-s1",
+      "results/e6/no_set_summary-s2",
+      "results/e9/final-s3",
+      "results/e9/final-s4"
+    ],
+    "Zhao-GCN": [
+      "results/e11/runs/zhao_gcn-s0",
+      "results/e11/runs/zhao_gcn-s1",
+      "results/e11/runs/zhao_gcn-s2"
+    ]
+  }
+}
