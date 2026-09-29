@@ -47,6 +47,7 @@ class Episode:
     threshold: float
     service_bytes: int
     source_of: dict[int, int] = field(default_factory=dict)
+    dest_of: dict[int, int] = field(default_factory=dict)
 
 
 def _routes(next_hop: np.ndarray) -> list[dict]:
@@ -141,7 +142,7 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
                "queues": [{"key": [int(u), int(v)], "entries": []} for u, v in qlinks],
                "waiting_areas": [{"node_id": i, "entries": []} for i in range(n)],
                "routes": _routes(next_hops[0])}
-    frames, source_of, pid = [], {}, 0
+    frames, source_of, dest_of, pid = [], {}, {}, 0
     for k in range(horizon):
         start, end = k * period_ns, (k + 1) * period_ns
         available = ratios[k] >= 1 - EPS
@@ -158,6 +159,7 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
             births.append({"packet_id": pid, "source": b.src, "destination": b.dst,
                            "born_at_ns": born, "deadline_ns": None})
             source_of[pid] = b.src
+            dest_of[pid] = b.dst
             pid += 1
         updates = _routes(next_hops[k + 1]) if (k + 1) % routing.update_every == 0 else []
         frames.append({"start_ns": start, "services": services, "births": births,
@@ -194,7 +196,7 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
     return Episode(payload=payload, period_ns=period_ns, horizon=horizon, packet_size=ps,
                    qlinks=qlinks, positions=positions, velocities=velocities, gains=gains,
                    next_hops=next_hops, power=power, noise=noise, threshold=threshold,
-                   service_bytes=radio.service_bytes, source_of=source_of)
+                   service_bytes=radio.service_bytes, source_of=source_of, dest_of=dest_of)
 
 
 def result_capacity(payload: dict, physical_bytes: int) -> int:
@@ -238,6 +240,10 @@ def report_from(obs: dict, ep: Episode, *, run_id: str, episode: int) -> Report:
             next_hop[r["node_id"], r["destination"]] = r["next_hop"]
     u, v = ep.qlinks[:, 0], ep.qlinks[:, 1]
     waiting = obs["waiting_areas"]
+    queue_dst = np.zeros((len(obs["queues"]), n), dtype=np.int64)
+    for i, q in enumerate(obs["queues"]):
+        for e in q["entries"]:
+            queue_dst[i, ep.dest_of[e["packet_id"]]] += 1
     oldest = [(sampled - min(e["waiting_since_ns"] for e in w["entries"])) / NS if w["entries"] else 0.0
               for w in waiting]
     return Report(
@@ -252,7 +258,7 @@ def report_from(obs: dict, ep: Episode, *, run_id: str, episode: int) -> Report:
         waiting_capacity=np.array([w["capacity_bytes"] // ep.packet_size for w in waiting],
                                   dtype=np.int64),
         waiting_oldest=np.maximum(np.array(oldest), 0.0),
-        waiting_max_wait=waiting[0]["max_wait_ns"] / NS if waiting else 0.0)
+        waiting_max_wait=waiting[0]["max_wait_ns"] / NS if waiting else 0.0, queue_dst=queue_dst)
 
 
 def facts_from(cycle: dict, ep: Episode, k: int, radio: dict | None = None) -> CycleFacts:

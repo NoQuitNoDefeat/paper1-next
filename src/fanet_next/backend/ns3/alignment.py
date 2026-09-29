@@ -40,6 +40,7 @@ def compare_reports(a, b, where: str) -> list[str]:
     _cmp(f"{where} next_hop", a.next_hop, b.next_hop, out)
     _cmp(f"{where} route_next", a.route_next, b.route_next, out)
     _cmp(f"{where} gain", a.gain, b.gain, out)
+    _cmp(f"{where} queue destinations", a.queue_dst, b.queue_dst, out)
     return out
 
 

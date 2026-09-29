@@ -41,6 +41,9 @@ class DecisionOutput:
 class Policy(ABC):
     needs_graph: bool = False
     learnable: bool = False
+    # True: the policy drives the controller until no candidate is feasible (maximal plans,
+    # the method's design).  A baseline that deliberately leaves capacity idle sets False.
+    maximal_plans: bool = True
 
     def seed(self, seed: int) -> None:
         self.rng = np.random.default_rng(seed)

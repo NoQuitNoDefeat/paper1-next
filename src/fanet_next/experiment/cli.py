@@ -51,7 +51,8 @@ def _cmd_resume(args) -> None:
     run.train(args.iterations)
 
 
-def _cmd_eval(args) -> None:
+def _eval_setup(args):
+    """Config (checkpoint's or file, backend switch, then --set) and the checkpoint if any."""
     from ..config import apply_override
     from .assemble import switch_backend
     if args.run_dir:
@@ -64,16 +65,47 @@ def _cmd_eval(args) -> None:
         cfg = switch_backend(cfg, args.backend)
     for item in args.set or []:
         apply_override(cfg, item)
+    return cfg, ckpt
+
+
+def _policy(cfg, ckpt, name: str):
+    """A registered policy by name (JSON for parameters, e.g. '{"type": "max_weight_opt"}');
+    'ppo' loads the checkpoint's model."""
+    if name == "ppo":
+        if ckpt is None:
+            raise SystemExit("evaluating 'ppo' needs --run-dir (a trained checkpoint)")
+        model = build_model(cfg, feature_schema(cfg))
+        model.load_state_dict(ckpt["model"])
+        return build_policy(cfg, "ppo", model=model)
+    return build_policy(cfg, json.loads(name) if name.startswith("{") else name)
+
+
+def _cmd_optgap(args) -> None:
+    from .optimality import probe
+    cfg, ckpt = _eval_setup(args)
     table = {}
     for name in args.policies:
-        if name == "ppo":
-            if ckpt is None:
-                raise SystemExit("evaluating 'ppo' needs --run-dir (a trained checkpoint)")
-            model = build_model(cfg, feature_schema(cfg))
-            model.load_state_dict(ckpt["model"])
-            policy = build_policy(cfg, "ppo", model=model)
-        else:
-            policy = build_policy(cfg, name)
+        res = probe(cfg, _policy(cfg, ckpt, name), split=args.split, episodes=args.episodes,
+                    seed_offset=args.seed_offset, cycles=args.cycles, drain_cycles=args.drain,
+                    time_limit=args.time_limit)
+        table[name] = res
+        print(f"{name:>16}: ratio={res['ratio_mean']:.4f} p5={res['ratio_p5']:.4f} "
+              f"optimal={res['optimal_frac']:.3f} decide={res['decision_ms_mean']:.2f}ms "
+              f"(p99 {res['decision_ms_p99']:.1f}) milp={res['milp_ms_mean']:.1f}ms "
+              f"(p99 {res['milp_ms_p99']:.1f}, not optimal {res['milp_not_optimal']})", flush=True)
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps({"config": cfg, "code": code_version(), "results": table,
+                                              "checkpoint": str(args.checkpoint or args.run_dir or "")},
+                                             indent=2, ensure_ascii=False, default=str))
+        print(f"wrote {args.out}")
+
+
+def _cmd_eval(args) -> None:
+    cfg, ckpt = _eval_setup(args)
+    table = {}
+    for name in args.policies:
+        policy = _policy(cfg, ckpt, name)
         def progress(row, done, total, name=name, t0=time.time()):
             print(f"episode {done}/{total} {name} seed={row['seed']} "
                   f"delivery={row['delivery_ratio']:.4f} delay={row['e2e_delay_mean_s']:.3f} "
@@ -136,6 +168,17 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--seed-offset", type=int, default=0,
                    help="skip the first N seeds of the split (e.g. those used for selection)")
     e.add_argument("--out")
+    og = sub.add_parser("optgap", help="per-cycle max-weight approximation ratio and decision time")
+    for a in ("--config", "--run-dir", "--checkpoint", "--backend", "--out"):
+        og.add_argument(a)
+    og.add_argument("--set", action="append", default=[])
+    og.add_argument("--policies", nargs="+", default=["longest_queue"])
+    og.add_argument("--split", default="dev", choices=["dev", "test"])
+    og.add_argument("--episodes", type=int, default=4)
+    og.add_argument("--seed-offset", type=int, default=0)
+    og.add_argument("--cycles", type=int, help="decision cycles per episode (default: all)")
+    og.add_argument("--drain", type=int, default=0)
+    og.add_argument("--time-limit", type=float, default=10.0, help="MILP seconds per cycle")
     sel = sub.add_parser("select", help="pick a checkpoint by the fixed reliability-first rule")
     sel.add_argument("--run-dir", required=True)
     sel.add_argument("--reference", default="longest_queue")
@@ -147,7 +190,7 @@ def main(argv: list[str] | None = None) -> None:
     st.add_argument("--root", default="results")
     st.add_argument("--watch", type=float, default=0.0, help="refresh every N seconds")
     sub.add_parser("components")
-    for sp in (e, sel):
+    for sp in (e, sel, og):
         sp.add_argument("--threads", type=int, default=4, help="torch CPU threads")
     args = p.parse_args(argv)
     torch.set_num_threads(getattr(args, "threads", 4))
@@ -162,10 +205,10 @@ def main(argv: list[str] | None = None) -> None:
         from .select import select_checkpoint
         select_checkpoint(args.run_dir, reference=args.reference, episodes=args.episodes,
                           drain=args.drain, delta=args.delta, num_envs=args.num_envs)
-    elif args.cmd == "eval":
+    elif args.cmd in ("eval", "optgap"):
         if not (args.config or args.run_dir):
-            raise SystemExit("eval needs --config or --run-dir")
-        _cmd_eval(args)
+            raise SystemExit(f"{args.cmd} needs --config or --run-dir")
+        (_cmd_eval if args.cmd == "eval" else _cmd_optgap)(args)
     else:
         from . import assemble  # noqa: F401  (registers everything)
         print(describe())

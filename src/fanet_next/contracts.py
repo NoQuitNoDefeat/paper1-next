@@ -65,6 +65,9 @@ class Report:
     waiting_capacity: np.ndarray  # (N,) int
     waiting_oldest: np.ndarray  # (N,) s since the oldest waiting packet entered; 0 if empty
     waiting_max_wait: float
+    # (Q, N) packets per destination in each queue: the commodity view backpressure needs;
+    # None when a backend does not report it
+    queue_dst: np.ndarray | None = None
 
 
 @dataclass(frozen=True)

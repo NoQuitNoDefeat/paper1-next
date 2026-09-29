@@ -118,6 +118,10 @@ class LightweightBackend(Backend):
         route_next = (self.next_hop[u] == v[:, None]).any(axis=1)
         wait_n = np.array([len(w) for w in self.waiting], dtype=np.int64)
         wait_old = np.array([t - min(p.waiting_since for p in w) if w else 0.0 for w in self.waiting])
+        queue_dst = np.zeros((len(self.queues), sc.num_nodes), dtype=np.int64)
+        for i, d in enumerate(self.queues):
+            for p in d:
+                queue_dst[i, p.dst] += 1
         return Report(
             run_id=self.run_id, episode=self.episode, cycle=k, time=t,
             cycle_length=sc.cycle_length, num_nodes=sc.num_nodes, positions=pos,
@@ -127,7 +131,7 @@ class LightweightBackend(Backend):
             queue_links=self.qlinks.copy(), queues=self._snapshot(t), route_next=route_next,
             next_hop=self.next_hop.copy(), waiting_packets=wait_n,
             waiting_capacity=self.wcap.copy(), waiting_oldest=np.maximum(wait_old, 0.0),
-            waiting_max_wait=sc.waiting_max_wait)
+            waiting_max_wait=sc.waiting_max_wait, queue_dst=queue_dst)
 
     def in_system(self) -> tuple[int, int]:
         return sum(len(d) for d in self.queues), sum(len(w) for w in self.waiting)

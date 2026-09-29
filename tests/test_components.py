@@ -29,7 +29,8 @@ def run_policy(cfg, policy, cycles=15, seed=3):
         links = inp.problem.links[out.actions] if out.actions else np.zeros((0, 2), int)
         nodes = links.flatten()
         assert len(nodes) == len(set(nodes)), "half duplex violated"
-        assert inp.controller.done, "plan must be maximal under the controller"
+        if policy.maximal_plans:
+            assert inp.controller.done, "plan must be maximal under the controller"
         if cfg.get("constraints", {}).get("interference", "full_sinr") == "full_sinr" and len(links):
             p = inp.problem
             assert np.all(set_sinr(links, p.gain, p.power, p.noise) >= p.threshold * (1 - 1e-9))
