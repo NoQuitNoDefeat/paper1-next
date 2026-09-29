@@ -54,6 +54,24 @@ def main() -> None:
     full = [f for x in e10.values() for f in x["fid"].values() if not f["control"]]
     ctrl = e10["default"]["fid"][d["e10"]["control"]]
     ref_lq = e10["default"]["fid"][d["e10"]["ref"]]
+    c11 = d["e11"]["compare"]
+    ext = [n for n in c11["diffs"] if n != "仅模仿"]
+    learned = ("Zhao-GCN", "GRLinQ", "独立决定PPO")
+    ok_all = all(c11["diffs"][n][v]["delivery_ratio"]["lo"] >= -0.005 for n in c11["diffs"] for v in c11["scenarios"])
+    sig = sum(c11["diffs"][n][v]["delivery_ratio"]["lo"] > 0 for n in ext for v in c11["scenarios"])
+    bp = [c11["diffs"][n][v] for n in ("backpressure", "backpressure_opt") for v in c11["scenarios"]]
+    facts.update({
+        "e11_n_ext": len(ext), "e11_episodes": c11["episodes"], "e11_cells": len(ext) * len(c11["scenarios"]),
+        "e11_sig": sig, "e11_all_ok": "全部" if ok_all else "并非全部",
+        "e11_learned_lo": f"{min(c11['diffs'][n][v]['delivery_ratio']['m'] for n in learned for v in c11['scenarios']) * 100:.1f}",
+        "e11_learned_hi": f"{max(c11['diffs'][n][v]['delivery_ratio']['m'] for n in learned for v in c11['scenarios']) * 100:.1f}",
+        "e11_bp_dr_lo": f"{min(x['delivery_ratio']['m'] for x in bp) * 100:.1f}",
+        "e11_bp_dr_hi": f"{max(x['delivery_ratio']['m'] for x in bp) * 100:.1f}",
+        "e11_bp_delay_lo": f"{min(x['e2e_delay_mean_s']['m'] for x in bp):.2f}",
+        "e11_bp_delay_hi": f"{max(x['e2e_delay_mean_s']['m'] for x in bp):.2f}",
+        "e11_oneshot_lo": f"{min(c11['diffs']['独立决定PPO'][v]['delivery_ratio']['m'] for v in c11['scenarios']) * 100:.1f}",
+        "e11_oneshot_hi": f"{max(c11['diffs']['独立决定PPO'][v]['delivery_ratio']['m'] for v in c11['scenarios']) * 100:.1f}",
+    })
     facts.update({
         "e10_episodes": d["e10"]["episodes"], "e10_drain": d["e10"]["drain"],
         "e10_dr_default": fmt_pp(e10["default"]["adv"]["ns3"]["delivery_ratio"]["m"]),
@@ -74,7 +92,7 @@ def main() -> None:
 
 
 TEMPLATE = r"""<title>双图微步调度实验</title>
-<meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法、E1–E9 实验结果与 ns-3 物理层验证（E10）">
+<meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法、E1–E9 实验结果、ns-3 物理层验证（E10）与 12 个外部基线的比较（E11）">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
@@ -189,11 +207,12 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
 <header>
   <div class="eyebrow">paper1-next · UAV/FANET MAC 调度 · 实验报告</div>
   <h1>双图微步调度：定稿方法与测试集结果</h1>
-  <p class="lede">在从未使用过的测试集上，定稿方法在 5 个场景族中都没有比“最长队列优先”少送包，平均时延低 {{delay_lo}}–{{delay_hi}}%，p95 时延低 {{p95_lo}}–{{p95_hi}}%。在更密、更大、更拥堵或信道有误差的场景中，最终交付率还高出 {{dr_hard_lo}}–{{dr_hard_hi}} 个百分点。在 ns-3 包级物理层上重跑 {{e10_episodes}} 个新测试场景，这些结论不变。</p>
+  <p class="lede">在从未使用过的测试集上，定稿方法在 5 个场景族中都没有比“最长队列优先”少送包，平均时延低 {{delay_lo}}–{{delay_hi}}%，p95 时延低 {{p95_lo}}–{{p95_hi}}%。在更密、更大、更拥堵或信道有误差的场景中，最终交付率还高出 {{dr_hard_lo}}–{{dr_hard_hi}} 个百分点。在 ns-3 包级物理层上重跑 {{e10_episodes}} 个新测试场景，这些结论不变。与 {{e11_n_ext}} 个外部基线（含 3 个前人的学习方法和 2 个单周期精确最优解）相比，它在 5 个场景族中的交付率都最高。</p>
   <div class="meta">
     <span>测试：{{episodes}} 个场景 × 5 个场景族，排空 {{drain}} 周期</span>
     <span>主方法 {{seeds_main}} 个训练种子</span>
     <span>ns-3 验证：{{e10_episodes}} 个新场景 × 2 个场景族</span>
+    <span>外部基线：{{e11_n_ext}} 个，{{e11_episodes}} 个新场景 × 5 个场景族</span>
     <span>代码 <code>{{commit}}</code></span>
     <span>生成于 {{built}}</span>
   </div>
@@ -206,6 +225,8 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <li><strong>条件越难，优势越大。</strong>在 4 个困难场景族中，交付率和时延同时改善。这些场景都没有参与训练，属于零样本泛化。</li>
     <li><strong>模仿预热是必要的，改进来自 PPO 微调。</strong>从零训练的 PPO 靠大量丢包换取低时延（默认场景交付率 {{pure_test_default}}，基线 {{lq_test_default}}）。只模仿、不做 PPO 的模型与教师持平。</li>
     <li><strong>在 ns-3 物理层上成立。</strong>用 ns-3 的真实信号叠加、Shannon 判决和帧内连续运动执行同一批计划，定稿方法的优势与训练环境中几乎相同（交付率差：默认场景 {{e10_dr_default}} 个百分点，下界 {{e10_dr_default_lo}}；高负载 {{e10_dr_high}} 个百分点）。满足完整 SINR 的策略在两种执行下的交付率相差不超过 {{e10_fid_max}} 个百分点，物理层误包率不超过 {{e10_per_max}}%（图 3）。</li>
+    <li><strong>优于前人的学习方法，“逐条选择”的设计必要。</strong>相对 {{e11_n_ext}} 个外部基线，5 个场景族中的可靠性判定{{e11_all_ok}}成立，{{e11_cells}} 个比较中有 {{e11_sig}} 个交付率显著更高。相对 3 个前人的学习方法，交付率高 {{e11_learned_lo}}–{{e11_learned_hi}} 个百分点，时延也更低。与主方法只差动作形式的“独立决定”版本，交付率低 {{e11_oneshot_lo}}–{{e11_oneshot_hi}} 个百分点（图 4）。</li>
+    <li><strong>与反压是一组取舍。</strong>两个反压基线的交付率比主方法低 {{e11_bp_dr_lo}}–{{e11_bp_dr_hi}} 个百分点，但平均时延低 {{e11_bp_delay_lo}}–{{e11_bp_delay_hi}} s；它们还额外用到了“每个包发往哪里”的信息。按交付率优先，主方法更合适。每周期精确求解最大权反而交付率更低：单周期最优不等于长期最好。</li>
     <li><strong>尾部时延仍有差距。</strong>HOL 加权基线的 p95 时延更低，但交付率显著更低。按“交付率优先”的原则，定稿方法更合适。</li>
   </ul>
 
@@ -247,6 +268,29 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
   <p class="prose">正向对照故意只检查两两干扰、忽略累计干扰。它在 ns-3 中整链失败 {{e10_ctrl_failed}}%，物理层误包率 {{e10_ctrl_per}}%，交付率 {{e10_ctrl_dr}}（完整 SINR 的 longest_queue 为 {{e10_lq_dr}}）。这说明 ns-3 能发现违反干扰约束的计划；训练环境对这类失败的判定也与 ns-3 一致。</p>
   <div class="table-wrap"><table id="e10-table"></table></div>
   <p class="note">交付率差 = ns-3 − 轻量环境，单位为个百分点，方括号内为 95% 置信区间。误包率 = ns-3 中接收失败的 DATA 帧占全部发送帧的比例。预先登记的保真度标准：交付率差的置信区间落在 ±1 个百分点内，且误包率 ≤ 1%。</p>
+</section>
+
+<section>
+  <h2>与 12 个外部基线的比较（E11）</h2>
+  <p class="prose">对照包括：每周期精确求解的最大权和反压（MILP），经典启发式（longest_queue、HOL 加权、最老队首、反压贪心、LQ + 局部搜索、空间 TDMA），前人的学习方法（Zhao 等 TWC 2023 的 GCN、GRLinQ 式迭代图强化学习），以及与主方法只差动作形式的“独立决定”PPO。学习基线的训练预算和检查点选择规则都与主方法相同。所有计划都经过同一个完整 SINR 控制器，保证可行。测试集取 {{e11_episodes}} 个此前没用过的场景，方案和判定规则在开跑前登记。</p>
+  <figure id="fig-e11">
+    <p class="fig-title">图 4　主方法相对各基线的配对差（5 个场景族）</p>
+    <p class="fig-sub">每格：主方法减基线，均值与 95% 置信区间。蓝色表示主方法显著更好，红色表示显著更差，灰色表示不显著。</p>
+    <div class="controls" role="group" aria-label="选择指标" id="e11-buttons"></div>
+    <div class="table-wrap"><table class="heat" id="e11-table"></table></div>
+    <div class="swatches"><span><i style="background:color-mix(in oklab,var(--pos) 45%,var(--surface))"></i>主方法显著更好</span><span><i style="background:color-mix(in oklab,var(--neg) 45%,var(--surface))"></i>主方法显著更差</span><span><i style="background:var(--surface);border:1px solid var(--rule)"></i>不显著</span></div>
+  </figure>
+  <figure id="fig-e11s">
+    <p class="fig-title">图 5　负载、规模、速度扫描</p>
+    <p class="fig-sub">每个扫描点 32 个新场景。32、48 节点时 MILP 单次求解已超过 0.6 s，精确解基线不参与（–）。</p>
+    <div class="controls" role="group" aria-label="选择指标" id="e11s-buttons"></div>
+    <div class="table-wrap"><table class="heat" id="e11s-table"></table></div>
+    <figcaption><b>读法：</b>规模越大、负载越重，主方法的交付率优势越大。节点几乎静止（速度 0–5 m/s，超出训练分布）时，主方法交付率比 LQ 低约 0.3 个百分点，没有达到预登记的可靠性标准。</figcaption>
+  </figure>
+  <h3>单周期近似比与决策时间</h3>
+  <p class="prose">近似比 = 计划的单周期最大权 ÷ 同一状态下的 MILP 最优值（链路调度文献的常用指标）。主方法的近似比低于 longest_queue，交付率却最高：它用每周期的一部分权重换取长期的交付率与时延。精确最大权在 24 节点时平均每周期要一百多毫秒，超过 20 ms 的周期。</p>
+  <div class="table-wrap"><table id="e11-opt"></table></div>
+  <div id="e11-ns3-wrap"></div>
 </section>
 
 <section>
@@ -293,7 +337,7 @@ flowchart LR
       <p class="out">→ 确立“模仿预热 + 微调 + 可靠性优先选择”的训练协议，丢包惩罚取 λ = 20。</p></div></div>
     <div class="step"><div class="id">E6</div><div><h3>消融（默认场景与困难场景）</h3>
       <p>完整累计 SINR 约束和直接链路特征通路不可缺少。交互图主要降低时延，通信图消息传递主要提高交付率。门控求和摘要去掉后交付率不变、时延更低。</p>
-      <p class="out">→ 见图 5。</p></div></div>
+      <p class="out">→ 见图 7。</p></div></div>
     <div class="step"><div class="id">E7</div><div><h3>零样本泛化</h3>
       <p>6 种未见条件中，可靠性全部不劣于基线；在更难的条件下，交付率和时延同时改善。其中“24 节点同密度”变体曾误设为 424 m，已更正为 367.4 m 并补评。</p>
       <p class="out">→ 重负载评估改用 1000 周期排空。</p></div></div>
@@ -305,13 +349,16 @@ flowchart LR
     <div class="step"><div class="id">E10</div><div><h3>ns-3 物理层验证 <span class="tag">新测试场景</span></h3>
       <p>执行规则按本项目的方法自定：DATA 走真实物理层，集中式确认，帧内连续运动。开跑前修正了带宽取值差 1 字节的问题，以及评估时切换后端会丢失路由参数的问题。</p>
       <p class="out">→ 预先登记的 5 项判定全部满足（图 3）。</p></div></div>
+    <div class="step"><div class="id">E11</div><div><h3>12 个外部基线 <span class="tag">新测试场景</span></h3>
+      <p>补充每周期精确最优、反压、局部搜索、空间 TDMA 和 3 个前人的学习方法；另做近似比、决策时间、负载 / 规模 / 速度扫描和 ns-3 复核。</p>
+      <p class="out">→ 5 个场景族中交付率都最高；反压时延更低；节点几乎静止时有一处未达标（图 4、图 5）。</p></div></div>
   </div>
 </section>
 
 <section>
   <h2>训练过程</h2>
   <figure id="fig-curves">
-    <p class="fig-title">图 4　训练中的开发集评估</p>
+    <p class="fig-title">图 6　训练中的开发集评估</p>
     <p class="fig-sub">每 25 次迭代在开发集的 8 个场景上评估一次（排空 250 周期）。圆点为按固定规则选中的检查点。</p>
     <div class="legend">
       <span><i class="key-line"></i>定稿方法（5 个种子）</span>
@@ -327,14 +374,14 @@ flowchart LR
 <section>
   <h2>消融与摘要改进</h2>
   <figure id="fig-heat">
-    <p class="fig-title">图 5　去掉或替换部件后的变化（相对当时的完整模型，含门控求和摘要）</p>
+    <p class="fig-title">图 7　去掉或替换部件后的变化（相对当时的完整模型，含门控求和摘要）</p>
     <p class="fig-sub">E6 与 E6b，开发集第 16–47 个场景，每组 3 个训练种子取平均。着色表示差异显著：蓝色为更好，红色为更差；灰色为不显著。</p>
     <div class="controls" role="group" aria-label="选择指标" id="heat-buttons"></div>
     <div class="table-wrap"><table class="heat" id="heat-table"></table></div>
     <div class="swatches"><span><i style="background:color-mix(in oklab,var(--pos) 45%,var(--surface))"></i>显著更好</span><span><i style="background:color-mix(in oklab,var(--neg) 45%,var(--surface))"></i>显著更差</span><span><i style="background:var(--surface);border:1px solid var(--rule)"></i>不显著</span></div>
   </figure>
   <figure id="fig-e8">
-    <p class="fig-title">图 6　已选摘要的两种改进方案（相对“无摘要”）</p>
+    <p class="fig-title">图 8　已选摘要的两种改进方案（相对“无摘要”）</p>
     <p class="fig-sub">E8，判定规则：5 个场景的交付率下界都 ≥ −0.5 个百分点，且平均时延至少在 3 个场景显著更低、在任何场景都不显著更高。两种方案都未通过。</p>
     <div class="controls" role="group" aria-label="选择指标" id="e8-buttons"></div>
     <div class="table-wrap"><table class="heat" id="e8-table"></table></div>
@@ -347,7 +394,8 @@ flowchart LR
     <li>只在一个场景族上训练（16 节点、300 m、理想信道、单速率单信道）。困难条件的结果属于零样本泛化。</li>
     <li>ns-3 验证覆盖了包级物理层和帧内运动，但没有覆盖空口 ACK、控制信道时延和报告丢失、小尺度衰落和多速率；ns-3 只跑了默认和高负载两个场景族。时序仍是同步的。</li>
     <li>环境语义与研究方案第 19 版有两处差异：路由变化后重新安置旧队列；等待区恢复时，若目标队列已满则继续等待。详见 <code>docs/decisions.md</code>。</li>
-    <li>比较没有做多重校正。测试集已使用一次，之后的方法调整需要新的独立测试集。</li>
+    <li>反压基线使用了主方法没有的“每个包发往哪里”的信息，时延比主方法低；节点几乎静止时主方法的交付率略低于 LQ。</li>
+    <li>比较没有做多重校正。测试集已分批用于 E9–E11，之后的方法调整需要新的独立测试种子。</li>
   </ul>
   <h2>复现</h2>
   <p>全部源码、配置、实验方案和文档都在 GitHub 仓库 <code>NoQuitNoDefeat/paper1-next</code> 中。运行结果单独保存在本机 <code>results/</code>。本页由 <code>tools/build_report.py</code> 从结果文件生成。</p>
@@ -356,8 +404,10 @@ flowchart LR
 .venv/bin/python tools/confirm.py --spec configs/experiments/e9_test.json
 tools/ns3/setup.sh    # 构建 ns-3.48 + ns3-ai + 本项目的 fanet-scheduler 模块
 .venv/bin/python tools/e10_ns3.py --spec configs/experiments/e10_ns3.json
+.venv/bin/fanet-next train-baseline --config configs/baselines/zhao_gcn.toml --set seed=0 --run-dir results/e11/runs/zhao_gcn-s0
+.venv/bin/python tools/e11_compare.py --spec configs/experiments/e11_compare.json
 .venv/bin/python tools/build_report.py</code></pre>
-  <p class="note">实验记录：<code>docs/experiments.md</code>（E1–E10）；实现决定：<code>docs/decisions.md</code>；已知问题：<code>docs/known-issues.md</code>。</p>
+  <p class="note">实验记录：<code>docs/experiments.md</code>（E1–E11）；实现决定：<code>docs/decisions.md</code>；已知问题：<code>docs/known-issues.md</code>。</p>
 </section>
 </div>
 
@@ -522,15 +572,16 @@ const HEATM = [
   {key:"e2e_delay_mean_s", title:"平均时延（秒）", scale:1, dec:3, goodSign:-1, cap:0.3},
   {key:"e2e_delay_p95_s", title:"p95 时延（秒）", scale:1, dec:3, goodSign:-1, cap:0.6},
 ];
-function heat(tableId, buttonsId, rowsData, rowNames, scenIds){
+function heat(tableId, buttonsId, rowsData, rowNames, scenIds, rowLabel){
   let mi=0; const host=document.getElementById(buttonsId);
   const render=()=>{
     const m=HEATM[mi], t=document.getElementById(tableId); clear(t);
     const hr=t.createTHead().insertRow(); const c0=document.createElement("th"); c0.textContent=m.title; hr.appendChild(c0);
     for(const s of scenIds){ const c=document.createElement("th"); c.textContent=LABEL[s]; hr.appendChild(c); }
     const tb=t.createTBody();
-    for(const rname of rowNames){ const r=tb.insertRow(); const a=r.insertCell(); a.textContent=rname;
-      for(const s of scenIds){ const d=rowsData[rname][s][m.key]; const c=r.insertCell(); c.className="cell";
+    for(const rname of rowNames){ const r=tb.insertRow(); const a=r.insertCell(); a.textContent=(rowLabel&&rowLabel[rname])||rname;
+      for(const s of scenIds){ const c=r.insertCell(); c.className="cell"; const cell=rowsData[rname][s];
+        if(!cell){ c.textContent="–"; c.classList.add("ns"); continue; } const d=cell[m.key];
         const sig=d.lo>0||d.hi<0; const good=Math.sign(d.m)===m.goodSign;
         const v=d.m*m.scale; const main=document.createElement("div"); main.textContent=(v>0?"+":"")+v.toFixed(m.dec);
         const ci=document.createElement("span"); ci.className="ci"; ci.textContent=`[${(d.lo*m.scale).toFixed(m.dec)}, ${(d.hi*m.scale).toFixed(m.dec)}]`;
@@ -594,6 +645,32 @@ drawE10Table();
 drawAll();
 heat("heat-table","heat-buttons",DATA.ablations.table,DATA.ablations.components,DATA.ablations.scenarios);
 heat("e8-table","e8-buttons",DATA.e8.table,DATA.e8.candidates,DATA.e8.scenarios);
+const E11 = DATA.e11;
+const E11_ROWS = ["Zhao-GCN","GRLinQ","独立决定PPO","max_weight_opt","backpressure_opt","lq_local_search","backpressure","longest_queue","hol_weighted","oldest_hol","spatial_tdma","random","仅模仿"];
+heat("e11-table","e11-buttons",E11.compare.diffs,E11_ROWS.filter(n=>E11.compare.diffs[n]),E11.compare.scenarios,E11.labels);
+heat("e11s-table","e11s-buttons",E11.sweeps.diffs,E11_ROWS.filter(n=>E11.sweeps.diffs[n]),E11.sweeps.scenarios,E11.labels);
+(function(){
+  const t=document.getElementById("e11-opt"); const hr=t.createTHead().insertRow();
+  for(const h of ["策略","近似比 · 默认","近似比 · 24 节点","决策 ms · 默认","决策 ms · 24 节点"]){ const c=document.createElement("th"); c.textContent=h; hr.appendChild(c); }
+  const tb=t.createTBody(); const rows=Object.entries(E11.optgap).sort((a,b)=>b[1].default.ratio_mean-a[1].default.ratio_mean);
+  for(const [n,v] of rows){ const r=tb.insertRow(); if(n==="主方法") r.className="main"; r.insertCell().textContent=n==="主方法"?"定稿方法":((E11.labels&&E11.labels[n])||n);
+    for(const k of ["default","nodes24_dense"]) r.insertCell().textContent=v[k]?v[k].ratio_mean.toFixed(3):"–";
+    for(const k of ["default","nodes24_dense"]) r.insertCell().textContent=v[k]?v[k].decision_ms_mean.toFixed(1):"–"; }
+  if(!E11.ns3) return;
+  const wrap=document.getElementById("e11-ns3-wrap");
+  const h=document.createElement("h3"); h.textContent="ns-3 复核"; wrap.appendChild(h);
+  const p=document.createElement("p"); p.className="prose"; p.textContent=`按预登记，主方法、longest_queue、精确反压和默认场景交付率最高的学习基线（Zhao 等 GCN）在 ns-3 物理层（含帧内运动）上重跑 ${E11.ns3.episodes} 个场景。`; wrap.appendChild(p);
+  const tw=document.createElement("div"); tw.className="table-wrap"; const tt=document.createElement("table"); tw.appendChild(tt); wrap.appendChild(tw);
+  const hr2=tt.createTHead().insertRow();
+  for(const hname of ["策略","场景","交付率 · 轻量","交付率 · ns-3","ns-3 平均时延 (s)","ns-3 误包率","主方法交付率差 · ns-3"]){ const c=document.createElement("th"); c.textContent=hname; hr2.appendChild(c); }
+  const tb2=tt.createTBody();
+  for(const [n,byScen] of Object.entries(E11.ns3.rows)) for(const [v,x] of Object.entries(byScen)){
+    const r=tb2.insertRow(); if(n==="主方法") r.className="main";
+    r.insertCell().textContent=n==="主方法"?"定稿方法":((E11.labels&&E11.labels[n])||n); r.insertCell().textContent=LABEL[v]||v;
+    r.insertCell().textContent=x.dr_light.toFixed(4); r.insertCell().textContent=x.dr_ns3.toFixed(4);
+    r.insertCell().textContent=x.delay_ns3.toFixed(3); r.insertCell().textContent=(x.per*100).toFixed(2)+"%";
+    const c=r.insertCell(); const d=x.diff_delivery_ratio; if(d){ const pp=v2=>(v2*100>0?"+":"")+(v2*100).toFixed(2); c.textContent=pp(d.m); const ci=document.createElement("span"); ci.className="ci"; ci.textContent=`[${pp(d.lo)}, ${pp(d.hi)}]`; c.appendChild(ci);} else c.textContent="–"; }
+})();
 let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(drawAll,120); }).observe(document.querySelector(".page"));
 </script>
 """
