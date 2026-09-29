@@ -60,7 +60,8 @@ def policies(spec: dict) -> dict[str, dict]:
 def result_files(spec: dict, scenario: str, executor: str, name: str) -> list[tuple[list[str], Path]]:
     """(eval args, output file) per run (group member) and seed shard."""
     e = spec["eval"]
-    shards = e["shards"] if spec["executors"][executor] else 1
+    shards = (e["shards"] if spec["executors"][executor]
+              else spec.get("shard_policies", {}).get(name, 1))  # heavy lightweight jobs
     per = e["episodes"] // shards
     p = policies(spec)[name]
     targets = ([(p["args"], slug(name))] if p["runs"] is None else
@@ -81,7 +82,8 @@ def build_jobs(spec: dict) -> list[list[str]]:
     for executor, backend in sorted(spec["executors"].items(), key=lambda kv: kv[1] is None):
         for scenario, overrides in spec["scenarios"].items():
             for name, p in policies(spec).items():
-                if p.get("scenarios") and scenario not in p["scenarios"]:
+                if (p.get("scenarios") and scenario not in p["scenarios"]) or \
+                        name in spec.get("exclude", {}).get(scenario, []):
                     continue
                 for args, f in result_files(spec, scenario, executor, name):
                     if f.exists():
@@ -144,7 +146,8 @@ def status(spec: dict) -> str:
         kind = "ns3" if backend else "lightweight"
         for scenario in spec["scenarios"]:
             for name, p in policies(spec).items():
-                if p.get("scenarios") and scenario not in p["scenarios"]:
+                if (p.get("scenarios") and scenario not in p["scenarios"]) or \
+                        name in spec.get("exclude", {}).get(scenario, []):
                     continue
                 cells = []
                 for args, f in result_files(spec, scenario, executor, name):

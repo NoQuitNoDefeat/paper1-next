@@ -1,0 +1,87 @@
+{
+  "name": "E11 扫描：负载、规模、速度（测试集新种子）",
+  "out": "results/e11/sweeps",
+  "main": "主方法",
+  "eval": {
+    "split": "test",
+    "seed_offset": 3000,
+    "episodes": 32,
+    "drain": 1000,
+    "shards": 1
+  },
+  "executors": {
+    "lightweight": null
+  },
+  "scenarios": {
+    "load_5_15": [
+      "scenario.flow_rate_pps=[5.0, 15.0]"
+    ],
+    "load_20_40": [
+      "scenario.flow_rate_pps=[20.0, 40.0]"
+    ],
+    "load_40_60": [
+      "scenario.flow_rate_pps=[40.0, 60.0]"
+    ],
+    "nodes32_same_density": [
+      "scenario.num_nodes=32",
+      "scenario.area_m=424.3"
+    ],
+    "nodes48_same_density": [
+      "scenario.num_nodes=48",
+      "scenario.area_m=519.6"
+    ],
+    "speed_0_5": [
+      "scenario.speed_mps=[0.0, 5.0]"
+    ],
+    "speed_30_60": [
+      "scenario.speed_mps=[30.0, 60.0]"
+    ]
+  },
+  "baseline_config": "configs/protocol_final.toml",
+  "baselines": [
+    "max_weight_opt",
+    "backpressure_opt",
+    "longest_queue",
+    "hol_weighted",
+    "backpressure",
+    "lq_local_search"
+  ],
+  "groups": {
+    "主方法": [
+      "results/e6/no_set_summary-s0",
+      "results/e6/no_set_summary-s1",
+      "results/e6/no_set_summary-s2",
+      "results/e9/final-s3",
+      "results/e9/final-s4"
+    ],
+    "Zhao-GCN": [
+      "results/e11/runs/zhao_gcn-s0",
+      "results/e11/runs/zhao_gcn-s1",
+      "results/e11/runs/zhao_gcn-s2"
+    ],
+    "GRLinQ": [
+      "results/e11/runs/grlinq-s0",
+      "results/e11/runs/grlinq-s1",
+      "results/e11/runs/grlinq-s2"
+    ],
+    "独立决定PPO": [
+      "results/e11/runs/oneshot_ppo-s0",
+      "results/e11/runs/oneshot_ppo-s1",
+      "results/e11/runs/oneshot_ppo-s2"
+    ]
+  },
+  "exclude": {
+    "nodes32_same_density": [
+      "max_weight_opt",
+      "backpressure_opt"
+    ],
+    "nodes48_same_density": [
+      "max_weight_opt",
+      "backpressure_opt"
+    ]
+  },
+  "shard_policies": {
+    "max_weight_opt": 2,
+    "backpressure_opt": 2
+  }
+}

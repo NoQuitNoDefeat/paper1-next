@@ -86,6 +86,14 @@ class MaxWeightOptimal(Policy):
         return outs
 
 
+@POLICY.register("backpressure_opt", role="baseline")
+class BackpressureOptimal(MaxWeightOptimal):
+    """Per-cycle exact backpressure (MILP): max_weight_opt with backpressure weights."""
+
+    def __init__(self, time_limit_s: float = 10.0):
+        super().__init__(weights="backpressure", time_limit_s=time_limit_s)
+
+
 @POLICY.register("backpressure", role="baseline")
 class Backpressure(_ScoreGreedy):
     """Greedy backpressure: feasible candidate with the largest commodity differential first."""
