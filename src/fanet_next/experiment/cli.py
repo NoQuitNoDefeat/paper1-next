@@ -71,12 +71,11 @@ def _eval_setup(args):
 def _policy(cfg, ckpt, name: str):
     """A registered policy by name (JSON for parameters, e.g. '{"type": "max_weight_opt"}');
     'ppo' loads the checkpoint's model."""
-    if name == "ppo":
+    if name == "ppo":  # the checkpoint's learned policy (primary method or learned baseline)
         if ckpt is None:
             raise SystemExit("evaluating 'ppo' needs --run-dir (a trained checkpoint)")
-        model = build_model(cfg, feature_schema(cfg))
-        model.load_state_dict(ckpt["model"])
-        return build_policy(cfg, "ppo", model=model)
+        from .assemble import policy_from_checkpoint
+        return policy_from_checkpoint(cfg, ckpt)
     return build_policy(cfg, json.loads(name) if name.startswith("{") else name)
 
 
@@ -179,6 +178,11 @@ def main(argv: list[str] | None = None) -> None:
     og.add_argument("--cycles", type=int, help="decision cycles per episode (default: all)")
     og.add_argument("--drain", type=int, default=0)
     og.add_argument("--time-limit", type=float, default=10.0, help="MILP seconds per cycle")
+    tb = sub.add_parser("train-baseline", help="train a learned baseline (config [baseline])")
+    tb.add_argument("--config", required=True)
+    tb.add_argument("--set", action="append", default=[])
+    tb.add_argument("--run-dir")
+    tb.add_argument("--iterations", type=int)
     sel = sub.add_parser("select", help="pick a checkpoint by the fixed reliability-first rule")
     sel.add_argument("--run-dir", required=True)
     sel.add_argument("--reference", default="longest_queue")
@@ -198,6 +202,14 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_train(args)
     elif args.cmd == "resume":
         _cmd_resume(args)
+    elif args.cmd == "train-baseline":
+        from .train_baseline import BaselineRun
+        cfg = load_config(args.config, args.set)
+        run_dir = Path(args.run_dir or f"results/{cfg.get('name', 'baseline')}-s{cfg.get('seed', 0)}")
+        if (run_dir / "checkpoints" / "latest.pt").exists():
+            raise SystemExit(f"{run_dir} already has a checkpoint")
+        print(f"run dir: {run_dir}")
+        BaselineRun(cfg, run_dir).train(args.iterations)
     elif args.cmd == "status":
         from .status import main as status_main
         status_main(args.root, args.watch)

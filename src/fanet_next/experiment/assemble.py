@@ -10,6 +10,7 @@ from pathlib import Path
 
 # importing the packages registers every implementation
 from .. import backend as _backend  # noqa: F401
+from .. import baselines as _baselines  # noqa: F401
 from .. import model as _model  # noqa: F401
 from .. import observation as _observation  # noqa: F401
 from .. import policy as _policy  # noqa: F401
@@ -72,12 +73,25 @@ def build_model(cfg: dict, schema: FeatureSchema | None = None):
 def build_policy(cfg: dict, spec: dict | str | None = None, model=None, seed: int = 0) -> Policy:
     spec = _spec({"p": spec}, "p", None) if spec is not None else _spec(cfg, "policy", "ppo")
     entry = POLICY.entry(spec["type"])
-    if getattr(entry.factory, "learnable", False):
+    if getattr(entry.factory, "learnable", False) and not getattr(entry.factory, "builds_own_model", False):
         return POLICY.build(spec, model=model if model is not None else build_model(cfg), seed=seed)
     params = dict(spec)
     if "seed" in __import__("inspect").signature(entry.factory).parameters:
         params.setdefault("seed", seed)
     return POLICY.build(params)
+
+
+def policy_from_checkpoint(cfg: dict, ckpt: dict) -> Policy:
+    """The learned policy stored in a checkpoint: the primary dual-graph PPO policy, or a
+    learned baseline (``policy_spec`` + its network weights)."""
+    spec = ckpt.get("policy_spec")
+    if spec is None:
+        model = build_model(cfg, feature_schema(cfg))
+        model.load_state_dict(ckpt["model"])
+        return build_policy(cfg, "ppo", model=model)
+    policy = build_policy(cfg, spec)
+    policy.load_state_dict(ckpt["model"])
+    return policy
 
 
 def check_compatibility(env: SchedulingEnv, policy: Policy) -> dict:

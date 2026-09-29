@@ -1,0 +1,7 @@
+# E11 学习基线：每条链路独立决定发或不发（伯努利），再剔除不可行链路。
+# 除动作形式外与定稿主方法完全相同：双图模型、观测、奖励 A（λ=20）、模仿预热、PPO 设置。
+extends = "../protocol_final.toml"
+name = "bl-oneshot-ppo"
+
+[baseline]
+policy = { type = "oneshot_ppo" }

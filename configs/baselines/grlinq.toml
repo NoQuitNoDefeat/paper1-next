@@ -1,0 +1,7 @@
+# E11 学习基线：GRLinQ 式迭代图强化学习（Shan et al., 2024），按队列加权、完整 SINR 判定成功。
+extends = "../protocol_final.toml"
+name = "bl-grlinq"
+
+[baseline]
+policy = { type = "grlinq", hidden = 64, layers = 3, k_nearest = 10, horizon = 32 }
+learner = { gamma = 1.0, gae_lambda = 0.95, lr = 3e-4, clip = 0.2, epochs = 4, minibatch = 512, ent_coef = 0.01 }

@@ -41,6 +41,15 @@ def node_conflicts(problem: SchedulingProblem) -> np.ndarray:
     return share
 
 
+def pairwise_conflicts(problem: SchedulingProblem) -> np.ndarray:
+    """(C, C) bool conflict graph: shared endpoint, or the pair fails its SINR on its own
+    (the binary conflict model of graph-based schedulers; cumulative effects are not in it)."""
+    own = problem.signal[:, None] >= problem.threshold * (problem.noise + problem.cross.T) * (1 - REL_TOL)
+    out = node_conflicts(problem) | ~(own & own.T)
+    np.fill_diagonal(out, False)
+    return out
+
+
 def feasible(problem: SchedulingProblem, idx) -> bool:
     """Half duplex and every member's cumulative SINR, with the controller's tolerance."""
     idx = np.asarray(idx, dtype=np.int64)

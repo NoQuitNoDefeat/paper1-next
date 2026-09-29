@@ -59,7 +59,7 @@ def evaluate(cfg: dict, policy: Policy, *, split: str = "dev", episodes: int = 8
     envs = [build_env(cfg, run_id=f"eval-{split}-{i}", build_graph=policy.needs_graph,
                       scenario_override=scenario) for i in range(min(num_envs, episodes))]
     manifest = check_compatibility(envs[0], policy)
-    if hasattr(policy, "seed") and not policy.learnable:
+    if hasattr(policy, "seed") and (not policy.learnable or policy.stochastic_eval):
         policy.seed(12345)
     seeds = split_seeds(split, episodes, seed_offset)
     rows = run_episodes(policy, envs, seeds, mode=mode, on_episode=on_episode)

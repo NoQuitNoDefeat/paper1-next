@@ -1,0 +1,8 @@
+# E11 学习基线：Zhao et al., TWC 2023（GCN 引导的贪心最大权，原文的确定性策略梯度训练）。
+# 场景、奖励、训练预算（迭代数 × 环境数 × 每次周期数）与定稿主方法相同；网络与学习器按原文。
+extends = "../protocol_final.toml"
+name = "bl-zhao-gcn"
+
+[baseline]
+policy = { type = "zhao_gcn", layers = 3, hidden = 32 }
+learner = { lr = 1e-5, batch = 200, eps_start = 1.0, eps_end = 0.002 }

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..scheduling.constraints import REL_TOL
-from ..scheduling.maxweight import _Set, greedy_complete, local_search, max_weight_set
+from ..scheduling.maxweight import (_Set, greedy_complete, local_search, max_weight_set,
+                                    pairwise_conflicts)
 from ..scheduling.problem import SchedulingProblem
 from .base import POLICY, DecisionOutput, Policy
 from .heuristics import _ScoreGreedy, queue_view
@@ -145,12 +145,7 @@ class SpatialTdma(Policy):
             return [set()]
         prob = SchedulingProblem(links=links, gain=rep.gain, power=rep.tx_power,
                                  noise=rep.noise, threshold=rep.threshold)
-        # pairwise compatibility: no shared endpoint and each survives the other's interference
-        s, r = links[:, 0], links[:, 1]
-        share = ((s[:, None] == s[None, :]) | (s[:, None] == r[None, :])
-                 | (r[:, None] == s[None, :]) | (r[:, None] == r[None, :]))
-        own = prob.signal[:, None] >= prob.threshold * (prob.noise + prob.cross.T) * (1 - REL_TOL)
-        degree = (share | ~(own & own.T)).sum(axis=1) - 1  # conflicts, most constrained first
+        degree = pairwise_conflicts(prob).sum(axis=1)  # most constrained first
         slots: list[_Set] = []
         for i in np.argsort(-degree, kind="stable"):
             for st in slots:

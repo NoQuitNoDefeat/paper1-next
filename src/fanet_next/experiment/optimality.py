@@ -28,7 +28,7 @@ def probe(cfg: dict, policy: Policy, *, split: str = "dev", episodes: int = 4,
     scenario = eval_scenario(cfg, drain_cycles)
     env = build_env(cfg, run_id="optgap", build_graph=policy.needs_graph,
                     scenario_override=scenario)
-    if hasattr(policy, "seed") and not policy.learnable:
+    if hasattr(policy, "seed") and (not policy.learnable or policy.stochastic_eval):
         policy.seed(12345)
     ratios, decide_ms, solve_ms, statuses = [], [], [], []
     for i, seed in enumerate(split_seeds(split, episodes, seed_offset)):

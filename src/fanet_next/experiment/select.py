@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 from ..training.checkpoint import load_checkpoint
-from .assemble import build_model, build_policy, code_version, feature_schema
+from .assemble import build_policy, code_version, policy_from_checkpoint
 from .evaluate import evaluate, paired
 
 RULE = ("eligible: paired mean delivery_ratio - reference >= -delta; "
@@ -43,9 +43,7 @@ def select_checkpoint(run_dir: str | Path, *, reference: str = "longest_queue", 
     rows = []
     for path in cands:
         ck = load_checkpoint(path)
-        model = build_model(cfg, feature_schema(cfg))
-        model.load_state_dict(ck["model"])
-        res = evaluate(cfg, build_policy(cfg, "ppo", model=model), split="dev", episodes=episodes,
+        res = evaluate(cfg, policy_from_checkpoint(cfg, ck), split="dev", episodes=episodes,
                        drain_cycles=drain, num_envs=num_envs)
         d = paired(res["rows"], ref["rows"], "delivery_ratio")
         m = res["mean"]

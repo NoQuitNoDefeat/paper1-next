@@ -44,6 +44,9 @@ class Policy(ABC):
     # True: the policy drives the controller until no candidate is feasible (maximal plans,
     # the method's design).  A baseline that deliberately leaves capacity idle sets False.
     maximal_plans: bool = True
+    # True: evaluation ("greedy" mode) still draws from the policy's randomness, so evaluation
+    # reseeds it for reproducible results (baselines whose papers evaluate stochastically).
+    stochastic_eval: bool = False
 
     def seed(self, seed: int) -> None:
         self.rng = np.random.default_rng(seed)
