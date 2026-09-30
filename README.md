@@ -2,6 +2,8 @@
 
 UAV/FANET MAC 调度强化学习的新研究工程。以双图表示、微动作 PPO 和资源/累计干扰约束为起点，建立便于改进方法、诊断训练和比较实验的代码。
 
+> **第一次阅读本工程？** 从 [导读](docs/guide.md) 开始。下面“给 Claude Code 的任务”一节是项目开始时写给开发会话的任务说明，阅读和审阅时不适用。
+
 ## 给 Claude Code 的任务
 
 阅读以下三份短说明，然后自主设计和实现：
@@ -22,6 +24,7 @@ UAV/FANET MAC 调度强化学习的新研究工程。以双图表示、微动作
 
 | 说明 | 内容 |
 | --- | --- |
+| [导读](docs/guide.md) | 给第一次阅读的人和 AI：注意事项、阅读路线、快速运行、审阅重点 |
 | [代码架构](docs/architecture.md) | 模块契约、可替换组件（槽位）清单、新增实现的步骤、运行记录与续训 |
 | [实现决定](docs/decisions.md) | 环境语义、场景校准、观测/模型/训练选择及依据；与旧工程的差异 |
 | [实验记录](docs/experiments.md) | E1–E11：训练、定稿、测试集、ns-3 物理层验证、12 个外部基线的比较（均预先登记） |
@@ -30,7 +33,7 @@ UAV/FANET MAC 调度强化学习的新研究工程。以双图表示、微动作
 定稿主方法：`configs/protocol_final.toml`（模仿 longest_queue 预热 + 微步 PPO，完整累计 SINR，不使用已选摘要）。结果报告页由 `tools/build_report.py` 生成。
 
 ```bash
-/opt/homebrew/opt/python@3.11/bin/python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest -q                       # 行为与契约测试
 .venv/bin/fanet-next components                     # 列出全部可替换组件
 .venv/bin/fanet-next train --config configs/protocol_final.toml --set seed=0 --run-dir results/runs/final-s0

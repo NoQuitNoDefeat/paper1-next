@@ -78,8 +78,9 @@ class Trunk(nn.Module):
 
 @MODEL.register("dual_graph", role="primary")
 class DualGraphModel(SchedulingModel):
-    """Dual-graph encoder, gated-sum set summary, MLP actor/critic; trunk optionally shared.
+    """Dual-graph encoder, set summary (none in the final method), MLP actor/critic.
 
+    ``share_trunk`` (default) shares the encoder trunk between actor and critic.
     ``candidate_dynamics=True`` adds a projection of the controller's per-candidate
     micro-state features to every candidate embedding at every micro step.
     """
