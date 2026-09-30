@@ -29,7 +29,7 @@ UAV/FANET MAC 调度强化学习的新研究工程。以双图表示、微动作
 | [实现决定](docs/decisions.md) | 环境语义、场景校准、观测/模型/训练选择及依据；与旧工程的差异 |
 | [实验记录](docs/experiments.md) | E1–E11：训练、定稿、测试集、ns-3 物理层验证、12 个外部基线的比较（均预先登记） |
 | [已知问题](docs/known-issues.md) | 局限与待办 |
-| [数据筛选](docs/data-screening.md) | 公开数据按轨迹、业务、信道、传输记录四层的筛选结果与待定事项 |
+| [数据筛选](docs/data-screening.md) | 按整套数据筛选公开数据：A 类（训练测试）与 B 类（环境检验）的逐条核对、待确认事项，以及补齐缺失层的模型参数 |
 
 定稿主方法：`configs/protocol_final.toml`（模仿 longest_queue 预热 + 微步 PPO，完整累计 SINR，不使用已选摘要）。结果报告页由 `tools/build_report.py` 生成。
 
