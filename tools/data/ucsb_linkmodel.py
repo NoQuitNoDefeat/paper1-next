@@ -24,14 +24,19 @@ received / lost counts) - an approximation well below the GPS error.  Primary
 configuration: horizontal transmitter without obstruction -> horizontal receiver
 (as the paper's main case); secondary: all configurations pooled.
 
-    .venv/bin/python tools/data/ucsb_linkmodel.py
+    .venv/bin/python tools/data/ucsb_linkmodel.py                  # pre-registered analysis
+    .venv/bin/python tools/data/ucsb_linkmodel.py --supplementary  # post hoc: exponent fixed at 2.0 / 2.5
+
+The replayed packets are cached in data/processed/ucsb_802154/packets.npz.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import math
+import pickle
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +47,7 @@ from scipy.stats import ncx2, norm
 
 RAW = Path(__file__).resolve().parents[2] / "data/raw/ucsb_802154"
 OUT = Path(__file__).resolve().parents[2] / "results/e13/ucsb_linkmodel.json"
+CACHE = Path(__file__).resolve().parents[2] / "data/processed/ucsb_802154/packets.pkl"
 RUN = ("Source", "Location", "Flight_Group", "Scenario", "Run")
 R_EARTH = 6_371_000.0
 SEND_S = 0.5
@@ -56,6 +62,15 @@ def ts(text: str) -> float:
 def enu(lat, lon, lat0, lon0):
     return (np.radians(np.asarray(lon) - lon0) * R_EARTH * math.cos(math.radians(lat0)),
             np.radians(np.asarray(lat) - lat0) * R_EARTH)
+
+
+def cached_packets() -> list[dict]:
+    if CACHE.exists():
+        return pickle.loads(CACHE.read_bytes())
+    packets = build_packets()
+    CACHE.parent.mkdir(parents=True, exist_ok=True)
+    CACHE.write_bytes(pickle.dumps(packets))
+    return packets
 
 
 def build_packets() -> list[dict]:
@@ -109,12 +124,16 @@ def rician_success(margin_db: np.ndarray, k_db: float) -> np.ndarray:
     return ncx2.sf(2 * (k + 1) * x, 2, 2 * k)
 
 
+FIXED_N: float | None = None  # supplementary analysis: exponent held fixed
+
+
 def prob(model: str, p: np.ndarray, d: np.ndarray) -> np.ndarray:
     rho = 1 / (1 + np.exp(-p[0]))
     if model == "step":
         s = np.where(d <= np.exp(p[1]), 1.0, 0.0)
     else:
-        margin = p[1] - 10 * p[2] * np.log10(np.maximum(d, 1.0))
+        n = p[2] if FIXED_N is None else FIXED_N
+        margin = p[1] - 10 * n * np.log10(np.maximum(d, 1.0))
         s = rician_success(margin, p[3]) if model == "rician" else norm.cdf(margin / np.exp(p[3]))
     return np.clip(rho * s, FLOOR, 1 - FLOOR)
 
@@ -170,7 +189,7 @@ def describe(model, p):
     if model == "step":
         return {"rho": rho, "range_m": math.exp(p[1])}
     extra = {"k_db": p[3]} if model == "rician" else {"sigma_db": math.exp(p[3])}
-    return {"rho": rho, "c_db": p[1], "exponent": p[2], **extra}
+    return {"rho": rho, "c_db": p[1], "exponent": p[2] if FIXED_N is None else FIXED_N, **extra}
 
 
 def evaluate(packets, select, label):
@@ -194,12 +213,27 @@ def evaluate(packets, select, label):
 
 
 def main() -> None:
-    packets = build_packets()
-    out = [evaluate(packets, lambda r: r["rx"] == "xbee_h" and r["note"].startswith("Horizontal, no obstruction"),
-                    "horizontal tx (no obstruction) -> horizontal rx"),
-           evaluate(packets, lambda r: True, "all configurations pooled")]
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(out, indent=1))
+    global FIXED_N
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--supplementary", action="store_true",
+                    help="post hoc: fit the fading models with the exponent fixed at 2.0 and 2.5")
+    a = ap.parse_args()
+    packets = cached_packets()
+    primary = lambda r: r["rx"] == "xbee_h" and r["note"].startswith("Horizontal, no obstruction")  # noqa: E731
+    if a.supplementary:
+        out = []
+        for n in (2.0, 2.5):
+            FIXED_N = n
+            for sel, label in ((primary, "horizontal tx (no obstruction) -> horizontal rx"),
+                               (lambda r: True, "all configurations pooled")):
+                out.append(evaluate(packets, sel, f"{label}, exponent fixed at {n}"))
+        path = OUT.with_name("ucsb_linkmodel_supplementary.json")
+    else:
+        out = [evaluate(packets, primary, "horizontal tx (no obstruction) -> horizontal rx"),
+               evaluate(packets, lambda r: True, "all configurations pooled")]
+        path = OUT
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=1))
     for r in out:
         print(f"== {r['label']}: fit {r['packets_fit']} packets, test {r['packets_test']} (PRR {r['prr_test']:.3f})")
         for m, v in r["models"].items():
