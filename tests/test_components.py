@@ -61,10 +61,15 @@ def test_every_channel_model_conserves_packets(channel):
 
 
 @pytest.mark.parametrize("name", SCENARIO.names())
-def test_every_scenario_source_is_well_formed(name):
+def test_every_scenario_source_is_well_formed(name, tmp_path):
     spec = {"type": name}
     if name == "fixed":
         spec.update(positions=[[0, 0, 100], [100, 0, 100]], births=[(0.01, 0, 1)], horizon=3)
+    if name == "trace":
+        t = np.arange(0.0, 30.0, 0.2)
+        np.savez(tmp_path / "toy.npz", t=t, pos=np.stack([np.stack([t, 50.0 * i + t * 0, 100 + 0 * t], 1)
+                                                         for i in range(5)], 1))
+        spec.update(dir=str(tmp_path), train=["toy"], num_nodes=4, horizon=40)
     sc = SCENARIO.build(spec).make(0)
     assert sc.positions(0).shape == (sc.num_nodes, 3)
     assert sc.positions(sc.horizon).shape == (sc.num_nodes, 3)

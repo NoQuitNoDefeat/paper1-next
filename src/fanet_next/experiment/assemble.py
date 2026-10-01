@@ -29,9 +29,7 @@ from ..scenario import SCENARIO
 from ..scheduling import CANDIDATES, ConstraintSet
 from ..training import ppo as _ppo  # noqa: F401  (register trainer)
 
-TRAIN_SEED_BASE = 1_000_000
-DEV_SEED_BASE = 10_000_000
-TEST_SEED_BASE = 20_000_000
+from ..seeds import DEV_SEED_BASE, TEST_SEED_BASE, TRAIN_SEED_BASE  # noqa: F401  (re-exported)
 
 
 def _spec(cfg: dict, key: str, default):

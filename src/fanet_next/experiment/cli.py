@@ -63,6 +63,8 @@ def _eval_setup(args):
         cfg = load_config(args.config)
     if args.backend:
         cfg = switch_backend(cfg, args.backend)
+    if getattr(args, "scenario", None):  # e.g. a dataset scene (configs/datasets/*.toml)
+        cfg["scenario"] = load_config(args.scenario)["scenario"]
     for item in args.set or []:
         apply_override(cfg, item)
     return cfg, ckpt
@@ -156,6 +158,8 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--set", action="append", default=[])
     e.add_argument("--backend", help="execute on this backend with the same environment "
                    "parameters (e.g. ns3), applied before --set")
+    e.add_argument("--scenario", help="replace the scenario section with this config file's "
+                   "(e.g. configs/datasets/flock30.toml), applied after --backend, before --set")
     e.add_argument("--policies", nargs="+", default=["longest_queue", "random"])
     e.add_argument("--split", default="dev", choices=["dev", "test"])
     e.add_argument("--episodes", type=int, default=8)
@@ -168,7 +172,7 @@ def main(argv: list[str] | None = None) -> None:
                    help="skip the first N seeds of the split (e.g. those used for selection)")
     e.add_argument("--out")
     og = sub.add_parser("optgap", help="per-cycle max-weight approximation ratio and decision time")
-    for a in ("--config", "--run-dir", "--checkpoint", "--backend", "--out"):
+    for a in ("--config", "--run-dir", "--checkpoint", "--backend", "--scenario", "--out"):
         og.add_argument(a)
     og.add_argument("--set", action="append", default=[])
     og.add_argument("--policies", nargs="+", default=["longest_queue"])

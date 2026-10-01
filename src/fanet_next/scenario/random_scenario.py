@@ -18,6 +18,35 @@ def _pick(value, rng: np.random.Generator, integer: bool = False):
     return int(value) if integer else float(value)
 
 
+def poisson_flows(rng: np.random.Generator, n: int, flow_rate_pps: float, cycle_length: float,
+                  horizon: int, traffic_stop_cycle: int | None, packet_size: int):
+    """One Poisson flow per node; the destinations form a random derangement (a cycle).
+
+    Returns (flows, births per cycle, traffic stop cycle); a birth in (kT, (k+1)T]
+    belongs to cycle k.
+    """
+    perm = rng.permutation(n)
+    flows = [(int(perm[i]), int(perm[(i + 1) % n])) for i in range(n)]
+    stop = horizon if traffic_stop_cycle is None else min(horizon, traffic_stop_cycle)
+    t_end = stop * cycle_length
+    births: list[Birth] = []
+    for src, dst in flows:
+        if flow_rate_pps <= 0:
+            continue
+        t = 0.0
+        while True:
+            t += rng.exponential(1.0 / flow_rate_pps)
+            if t > t_end:
+                break
+            births.append(Birth(t, src, dst, packet_size))
+    births.sort(key=lambda b: (b.time, b.src))
+    per_cycle: list[list[Birth]] = [[] for _ in range(horizon)]
+    for b in births:
+        k = min(max(math.ceil(b.time / cycle_length) - 1, 0), horizon - 1)
+        per_cycle[k].append(b)
+    return flows, per_cycle, stop
+
+
 class RandomScenario(Scenario):
     def __init__(self, *, rng: np.random.Generator, num_nodes: int, area_m: float,
                  altitude_m: tuple[float, float], speed_mps: float, vertical_speed_mps: float,
@@ -54,28 +83,8 @@ class RandomScenario(Scenario):
             pos = np.where(above, 2 * hi - pos, pos)
             vel = np.where(below | above, -vel, vel)
 
-        # one flow per node; destinations form a random derangement (cycle)
-        perm = rng.permutation(n)
-        self.flows = [(int(perm[i]), int(perm[(i + 1) % n])) for i in range(n)]
-        stop = horizon if traffic_stop_cycle is None else min(horizon, traffic_stop_cycle)
-        self.traffic_stop_cycle = stop
-        t_end = stop * cycle_length
-        births: list[Birth] = []
-        for src, dst in self.flows:
-            if flow_rate_pps <= 0:
-                continue
-            t = 0.0
-            while True:
-                t += rng.exponential(1.0 / flow_rate_pps)
-                if t > t_end:
-                    break
-                births.append(Birth(t, src, dst, packet_size))
-        births.sort(key=lambda b: (b.time, b.src))
-        self._births: list[list[Birth]] = [[] for _ in range(horizon)]
-        for b in births:
-            # birth in (k*T, (k+1)*T] belongs to cycle k
-            k = min(max(math.ceil(b.time / cycle_length) - 1, 0), horizon - 1)
-            self._births[k].append(b)
+        self.flows, self._births, self.traffic_stop_cycle = poisson_flows(
+            rng, n, flow_rate_pps, cycle_length, horizon, traffic_stop_cycle, packet_size)
 
     def positions(self, cycle: int) -> np.ndarray:
         return self._pos[cycle].copy()
