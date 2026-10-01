@@ -37,13 +37,13 @@ def main() -> None:
         runs[tuple(r[k] for k in RUN)].append(r)
     ntx = [len({r["Transmitter_Id"] for r in rs}) for rs in runs.values()]
     print("runs", len(runs), "transmitters per run min/median/max", min(ntx), int(np.median(ntx)), max(ntx))
-    # reception ratio from sequence numbers: 500 ms streams per (run, transmitter, receiver)
+    # reception ratio from sequence numbers: one counter per transmitter for every rate label
+    # (see ucsb_prr.py), distinct sequence numbers (XBee repeats broadcasts)
     streams = defaultdict(set)
     for r in sig:
-        if r["Transmitter_Rate"] == "500":
-            streams[(tuple(r[k] for k in RUN), r["Transmitter_Id"], r["Device"])].add(int(r["Transmitter_Packet_Seq"]))
+        streams[(tuple(r[k] for k in RUN), r["Transmitter_Id"], r["Device"])].add(int(r["Transmitter_Packet_Seq"]))
     prr = np.array([len(s) / (max(s) - min(s) + 1) for s in streams.values() if len(s) > 1])
-    print("500 ms streams", len(prr), "reception ratio (received / sequence span) median %.3f p10 %.3f p90 %.3f"
+    print("streams", len(prr), "reception ratio (distinct received / sequence span) median %.3f p10 %.3f p90 %.3f"
           % tuple(np.percentile(prr, [50, 10, 90])))
     # time alignment: do packet times fall inside the drone log of the same run?
     span = {}
