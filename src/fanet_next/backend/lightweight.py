@@ -101,7 +101,9 @@ class LightweightBackend(Backend):
     def _compute_routes(self, cycle: int) -> np.ndarray:
         gain = self.channel.true_gain(self.sc.positions(cycle), self.sc.radio)
         ratio = self.power[:, None] * gain / (self.threshold * self.noise)
-        adjacency = ratio >= 1 - EPS
+        # routes only use links the scheduler can use: SNR >= planning threshold (decoding
+        # threshold x fade margin); the routing margin stays relative to decoding
+        adjacency = ratio >= self.plan_threshold / self.threshold * (1 - EPS)
         np.fill_diagonal(adjacency, False)
         return self.routing.compute(adjacency, ratio)
 

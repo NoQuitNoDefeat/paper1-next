@@ -138,9 +138,11 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
                   [channel.execution_at(positions[k], radio, rng) for k in range(horizon)]
                   + [gains[horizon]])  # the final boundary is never executed
     ratios = [power[:, None] * g / (threshold * noise) for g in gains]
+    usable = float(db_to_lin(channel.fade_margin_db))  # planning / decoding threshold
 
     def table(k):
-        adjacency = ratios[k] >= 1 - EPS
+        # routes only use links the scheduler can use (as the lightweight backend)
+        adjacency = ratios[k] >= usable * (1 - EPS)
         np.fill_diagonal(adjacency, False)
         return routing.compute(adjacency, ratios[k])
 

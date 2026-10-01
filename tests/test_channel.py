@@ -118,3 +118,24 @@ def test_ns3_rejects_channels_it_cannot_reproduce():
     with pytest.raises(ValueError):
         BACKEND.build({"type": "ns3", "channel": "rician", "execution": "ledger"})
     BACKEND.build({"type": "ns3", "channel": "rician"})  # PHY execution: accepted
+
+
+def test_routes_only_use_links_the_scheduler_can_use():
+    """With a fade margin the planning threshold exceeds the decoding threshold: every
+    next hop chosen at a route update must reach the planning threshold on its own, in
+    both backends (otherwise packets wait on links that can never be scheduled)."""
+    channel = {"type": "rician", "k_factor_db": 10.0, "outage": 0.01}  # 6.2 dB > 6 dB routing margin
+    src = SCENARIO.build({"type": "random", "num_nodes": 16, "area_m": 300.0, "horizon": 30,
+                          "radio": {**A2A, "rate_bps": 4e6}})
+    routing = {"type": "min_hop", "update_every": 25, "snr_margin_db": 6.0}
+    for seed in (1, 2, 3):
+        sc = src.make(seed)
+        be = BACKEND.build({"type": "lightweight", "channel": channel, "routing": routing})
+        rep = be.reset(sc, seed=seed)
+        snr = rep.tx_power[:, None] * rep.gain / rep.noise
+        hops = {(u, int(rep.next_hop[u, d])) for u in range(sc.num_nodes) for d in range(sc.num_nodes)
+                if rep.next_hop[u, d] >= 0}
+        assert hops and all(snr[u, v] >= rep.threshold * (1 - 1e-9) for u, v in hops)
+        ep = build_episode(sc, ROUTING.build(routing), wireless=radio_settings(sc, motion=False),
+                           channel=CHANNEL.build(channel), seed=seed)
+        assert np.array_equal(ep.next_hops[0], rep.next_hop)

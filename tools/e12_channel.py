@@ -7,11 +7,12 @@
    configs/experiments/e12_sensitivity.json, next to C2 default on the same
    (first 32) scenes.
 
-    .venv/bin/python tools/e12_channel.py
+    .venv/bin/python tools/e12_channel.py [--prefix e12b]
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 
 import numpy as np
@@ -19,8 +20,6 @@ import numpy as np
 import e10_ns3 as base
 from confirm import ROOT, ci
 
-CHANNEL = "configs/experiments/e12_channel.json"
-SENS = "configs/experiments/e12_sensitivity.json"
 FAMILIES = ("default", "load_5_15", "nodes24_same_density")
 NI_MARGIN = -0.005
 
@@ -93,15 +92,18 @@ def sensitivity(channel: dict, sens: dict) -> list[str]:
 
 
 def main() -> None:
-    channel = json.loads((ROOT / CHANNEL).read_text())
-    sens = json.loads((ROOT / SENS).read_text())
-    lines = ["# E12 跨条件汇总", "",
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--prefix", default="e12", help="spec prefix: e12 or e12b")
+    a = ap.parse_args()
+    channel = json.loads((ROOT / f"configs/experiments/{a.prefix}_channel.json").read_text())
+    sens = json.loads((ROOT / f"configs/experiments/{a.prefix}_sensitivity.json").read_text())
+    lines = [f"# {a.prefix.upper()} 跨条件汇总", "",
              f"test 种子偏移 {channel['eval']['seed_offset']}，排空 {channel['eval']['drain']} 周期；"
              "学习型策略先按训练种子平均，再按场景配对；均值 [95% CI]。", ""]
     lines += channel_effect(channel) + sensitivity(channel, sens)
     lines.append(f"判定：可靠性可接受 = 交付率差 95% CI 下界 ≥ {NI_MARGIN}。没有做多重比较校正。")
     text = "\n".join(lines)
-    out = ROOT / "results/e12/summary_cross.md"
+    out = ROOT / f"results/{a.prefix}/summary_cross.md"
     out.write_text(text + "\n")
     print(text)
 

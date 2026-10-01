@@ -1,0 +1,64 @@
+{
+ "name": "E12b（路由只用可调度链路） 敏感性：路径损耗指数、莱斯 K、中断目标（默认场景族，与 C2 默认配对）",
+ "out": "results/e12b/sensitivity",
+ "main": "主方法",
+ "eval": {
+  "split": "test",
+  "seed_offset": 6000,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "n2.0_k10": [
+   "scenario.radio.pathloss_exponent=2.0",
+   "scenario.radio.tx_power_dbm=8.964",
+   "backend.channel={type=\"rician\", k_factor_db=10.0}"
+  ],
+  "n2.5_k10": [
+   "backend.channel={type=\"rician\", k_factor_db=10.0}"
+  ],
+  "n2.2_k5": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379",
+   "backend.channel={type=\"rician\", k_factor_db=5.0}"
+  ],
+  "n2.2_k15": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379",
+   "backend.channel={type=\"rician\", k_factor_db=15.0}"
+  ],
+  "n2.2_k10_outage1": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379",
+   "backend.channel={type=\"rician\", k_factor_db=10.0, outage=0.01}"
+  ],
+  "n2.2_k10_outage30": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379",
+   "backend.channel={type=\"rician\", k_factor_db=10.0, outage=0.3}"
+  ]
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2",
+   "results/e9/final-s3",
+   "results/e9/final-s4"
+  ],
+  "Zhao-GCN": [
+   "results/e11/runs/zhao_gcn-s0",
+   "results/e11/runs/zhao_gcn-s1",
+   "results/e11/runs/zhao_gcn-s2"
+  ]
+ }
+}
