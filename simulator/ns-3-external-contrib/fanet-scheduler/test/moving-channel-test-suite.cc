@@ -200,12 +200,37 @@ class MovingAckCase : public TestCase
     bool m_control;
 };
 
+class VelocityChangeCase : public TestCase
+{
+  public:
+    VelocityChangeCase() : TestCase("piecewise-constant-velocity-at-knots")
+    {
+    }
+
+  private:
+    void DoRun() override
+    {
+        // paper1-next: replayed trajectories change velocity at boundaries; positions stay
+        // continuous: x = 1 at 0 s (v = 2), x = 3 at 1 s (v = -1), x = 2 at 2 s.
+        MotionSettings settings{{0, 0, 0}, {100, 100, 100}, 1, 2, 3,
+            {{{1, {{1, 50, 50}, {2, 0, 0}}}},
+             {{1, {{3, 50, 50}, {-1, 0, 0}}}},
+             {{1, {{2, 50, 50}, {-1, 0, 0}}}}}};
+        MotionTrace trace(settings, 0, 1000000000, {1});
+        NS_TEST_ASSERT_MSG_EQ_TOL(trace.At(1, 500000000).position.x, 2, 1e-12,
+                                  "First cycle follows the first registered velocity");
+        NS_TEST_ASSERT_MSG_EQ_TOL(trace.At(1, 1500000000).position.x, 2.5, 1e-12,
+                                  "Second cycle follows the velocity registered at its knot");
+    }
+};
+
 class MotionSuite : public TestSuite
 {
   public:
     MotionSuite() : TestSuite("fanet-moving-channel", Type::UNIT)
     {
         AddTestCase(new MotionCase());
+        AddTestCase(new VelocityChangeCase());
         AddTestCase(new MovingAckCase(false));
         AddTestCase(new MovingAckCase(true));
         AddTestCase(new MovingAckCase(true, true));

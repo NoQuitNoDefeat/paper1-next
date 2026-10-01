@@ -30,7 +30,8 @@ struct MotionSettings
 /**
  * Immutable piecewise specular motion. Knots are the supplied boundary observations;
  * motion between knots uses their causal position/velocity, never future interpolation.
- * Boundary continuity is checked to 1e-9 m and 1e-12 m/s, not used as a SINR tolerance.
+ * Boundary positions are checked for continuity to 1e-9 m (not a SINR tolerance); the
+ * velocity may change at a knot, so motion is piecewise constant per cycle (paper1-next).
  */
 class MotionTrace
 {

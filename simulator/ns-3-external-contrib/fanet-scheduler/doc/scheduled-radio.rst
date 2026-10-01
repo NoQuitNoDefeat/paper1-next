@@ -26,7 +26,9 @@ profile the mobility objects are association placeholders and gains stay boundar
 Public position/velocity reports are separate graph inputs, not private execution facts.
 
 ``continuous-motion-frame-quasistatic-v1`` adds ``MotionTrace`` and ``TraceMobility``. Node positions
-follow independent native specular reflection between causal boundary samples. Each DATA/ACK
+follow independent native specular reflection between causal boundary samples; positions must be
+continuous across boundaries, while a node's velocity may change at a boundary (piecewise-constant
+velocity per cycle, used for replayed trajectories). Each DATA/ACK
 reception start samples current positions and rescales the registered directed gain by its
 distance ratio. Registered shadow/block factors retain their explicit boundary update times.
 The signal's received power is then held within that frame; signal arrivals/departures still

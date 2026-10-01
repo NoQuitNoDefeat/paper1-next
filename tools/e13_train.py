@@ -51,7 +51,7 @@ def main() -> None:
     p.add_argument("--parallel", type=int, default=7)
     a = p.parse_args()
     log_path = ROOT / "results/e13/train.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    (ROOT / "results/e13/runs").mkdir(parents=True, exist_ok=True)  # launch() writes logs there
 
     def log(msg: str) -> None:
         line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"

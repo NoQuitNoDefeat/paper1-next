@@ -115,3 +115,37 @@ def test_lockstep_alignment_with_lightweight_backend(policy, seed):
     r = align_episode(load_config("configs/protocol_final.toml"), seed, policy, horizon=60)
     assert r["aligned"], r["mismatches"]
     assert r["cycles"] == 60 and r["served"] > 0 and r["delivered"] > 0
+
+
+def test_replayed_trajectory_runs_on_the_phy_with_motion(tmp_path):
+    """A trace scene (velocity changing every cycle, positions continuous) is accepted by the
+    moving PHY and delivers like the lightweight backend within a small difference."""
+    import numpy as np
+
+    from fanet_next.config import deep_merge, load_config
+    from fanet_next.experiment.assemble import build_env, build_policy
+
+    t = np.arange(0.0, 60.0, 0.2)
+    pos = np.stack([np.stack([60.0 * i + 15.0 * np.sin(0.3 * t + i), 30.0 * np.cos(0.2 * t + i),
+                              100.0 + 2.0 * np.sin(0.1 * t)], 1) for i in range(8)], 1)
+    np.savez(tmp_path / "wavy.npz", t=t, pos=pos)
+    delivered = {}
+    for backend in ("lightweight", "ns3"):
+        cfg = load_config("configs/protocol_final.toml")
+        cfg = deep_merge(cfg, {"scenario": {"type": "trace", "dir": str(tmp_path), "train": ["wavy"],
+                                            "num_nodes": 8, "horizon": 60, "flow_rate_pps": 20.0,
+                                            "radio": cfg["scenario"]["radio"]}})
+        if backend == "ns3":
+            from fanet_next.experiment.assemble import switch_backend
+            cfg = switch_backend(cfg, "ns3")
+        pol = build_policy(cfg, "longest_queue")
+        env = build_env(cfg, run_id="trace", build_graph=False)
+        inp, n = env.reset(5), 0
+        while True:
+            tr = env.step(pol.act([inp], mode="greedy")[0].actions)
+            n += len(tr.facts.delivered_ids)
+            if tr.end.value != "continue":
+                break
+            inp = tr.next_input
+        delivered[backend] = n
+    assert delivered["ns3"] > 0 and abs(delivered["ns3"] - delivered["lightweight"]) <= 0.1 * delivered["lightweight"]

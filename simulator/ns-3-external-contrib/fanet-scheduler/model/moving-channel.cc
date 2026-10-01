@@ -97,11 +97,12 @@ MotionTrace::MotionTrace(const MotionSettings& settings, Ns start, Ns period,
             CheckAxis(s.position.z, s.velocity.z, settings.low.z, settings.high.z);
             if (i)
             {
+                // paper1-next: positions must be continuous; the velocity may change at a
+                // boundary (piecewise-constant velocity per cycle, e.g. replayed trajectories)
                 const auto expected = Advance(settings.boundaries[i - 1].at(id), settings,
                                               period / 1e9);
-                Require(CalculateDistance(expected.position, s.position) <= 1e-9 &&
-                            CalculateDistance(expected.velocity, s.velocity) <= 1e-12,
-                        "motion boundary teleports or changes unregistered velocity");
+                Require(CalculateDistance(expected.position, s.position) <= 1e-9,
+                        "motion boundary teleports");
             }
         }
     }
