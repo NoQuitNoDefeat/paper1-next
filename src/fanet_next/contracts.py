@@ -54,7 +54,9 @@ class Report:
     gain: np.ndarray  # (N, N) decision-time channel estimate Ghat[tx, rx]
     tx_power: np.ndarray  # (N,) W
     noise: float  # W
-    threshold: float  # linear SINR threshold
+    # linear SINR threshold to plan against: the decoding threshold times the channel
+    # model's fade margin (1 for a channel without fading)
+    threshold: float
     service_bytes: int  # bytes a scheduled link can move in one cycle
     packet_size: int
     queue_links: np.ndarray  # (Q, 2) registered next-hop queues (fixed per episode)

@@ -13,3 +13,7 @@ simulator/ns-3-dev/
 simulator/ns-3-external-contrib/fanet-scheduler/test/ns3.*
 simulator/ns-3-external-contrib/fanet-scheduler/test/*-tests*
 !simulator/ns-3-external-contrib/fanet-scheduler/test/*.cc
+
+# public datasets: raw downloads and derived scene files (provenance in data/sources.json)
+data/raw/
+data/processed/

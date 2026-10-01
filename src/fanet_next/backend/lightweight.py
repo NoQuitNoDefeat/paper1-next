@@ -29,7 +29,7 @@ import numpy as np
 
 from ..contracts import (CycleFacts, EndType, ExecutionError, Plan, QueueSnapshot, Report,
                          StepOutcome)
-from ..physics import set_sinr
+from ..physics import db_to_lin, set_sinr
 from ..scenario.base import Scenario
 from ..scenario.channel import CHANNEL, ChannelModel
 from ..scenario.routing import ROUTING, Routing
@@ -79,9 +79,12 @@ class LightweightBackend(Backend):
         self.run_id, self.episode = run_id, episode
         self.rng = np.random.default_rng(seed)
         n = sc.num_nodes
+        self.channel.reset(n, self.rng)
         self.power = np.full(n, radio.tx_power_w)
         self.noise = radio.noise_w
         self.threshold = radio.threshold
+        # the scheduler plans against the decoding threshold plus the channel's fade margin
+        self.plan_threshold = radio.threshold * float(db_to_lin(self.channel.fade_margin_db))
         self.qlinks = np.asarray(sc.queue_links, dtype=np.int64)
         self.qindex = {(int(u), int(v)): q for q, (u, v) in enumerate(self.qlinks)}
         self.qcap = np.asarray(sc.queue_capacity, dtype=np.int64)
@@ -126,7 +129,7 @@ class LightweightBackend(Backend):
             run_id=self.run_id, episode=self.episode, cycle=k, time=t,
             cycle_length=sc.cycle_length, num_nodes=sc.num_nodes, positions=pos,
             velocities=sc.velocities(k), gain=self.channel.estimate(pos, sc.radio, self.rng),
-            tx_power=self.power.copy(), noise=self.noise, threshold=self.threshold,
+            tx_power=self.power.copy(), noise=self.noise, threshold=self.plan_threshold,
             service_bytes=sc.radio.service_bytes, packet_size=sc.packet_size,
             queue_links=self.qlinks.copy(), queues=self._snapshot(t), route_next=route_next,
             next_hop=self.next_hop.copy(), waiting_packets=wait_n,

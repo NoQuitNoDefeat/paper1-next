@@ -1,0 +1,74 @@
+[
+ {
+  "dataset": "vasarhelyi2018",
+  "file": "flight_logs.zip",
+  "bytes": 7058698,
+  "sha256": "ca1e38129f2751b4bbfe6f80218faf85cf7727315a3b254043e1a5a7166be647",
+  "source": "https://zenodo.org/records/4983910",
+  "doi": "10.5061/dryad.mq85r61",
+  "license": "CC0-1.0",
+  "citation": "Vásárhelyi et al. 2018, Optimized flocking of autonomous drones in confined environments, Science Robotics 3:eaat3536",
+  "use": "A",
+  "downloaded": "2026-10-01"
+ },
+ {
+  "dataset": "ucsb_802154",
+  "file": "static_transmitters.csv",
+  "bytes": 7113,
+  "sha256": "1549e1bf7c170447933b2aa24ad00fe2ab775c727656f5cbd1930273e7b20833",
+  "source": "https://zenodo.org/records/4963701",
+  "doi": "10.25349/D9KS3W",
+  "license": "CC0-1.0",
+  "citation": "Nekrasov, Allen, Belding, Aerial Measurements from Outdoor 2.4GHz 802.15.4 Network (DroNet'19)",
+  "use": "B",
+  "downloaded": "2026-10-01"
+ },
+ {
+  "dataset": "ucsb_802154",
+  "file": "signal.csv",
+  "bytes": 38979788,
+  "sha256": "cc1ca448497faacb40fb112140d65028457a74ffc5e50562d85ef101d1428e1b",
+  "source": "https://zenodo.org/records/4963701",
+  "doi": "10.25349/D9KS3W",
+  "license": "CC0-1.0",
+  "citation": null,
+  "use": "B",
+  "downloaded": "2026-10-01"
+ },
+ {
+  "dataset": "ucsb_802154",
+  "file": "drone.csv",
+  "bytes": 222247027,
+  "sha256": "fb0a9f0cffe600cf383c35b57a888b7348926b0211a4cf9a1cf237aa4e7f686d",
+  "source": "https://zenodo.org/records/4963701",
+  "doi": "10.25349/D9KS3W",
+  "license": "CC0-1.0",
+  "citation": null,
+  "use": "B",
+  "downloaded": "2026-10-01"
+ },
+ {
+  "dataset": "verdoucq2025",
+  "file": "data.zip",
+  "bytes": 8729209,
+  "sha256": "8c164f22c8f6ec20a5ee48cbc75a095c24a0f622da0e2cb1de2a861a500dfd66",
+  "source": "https://zenodo.org/records/17902132",
+  "doi": "10.5281/zenodo.17902132",
+  "license": "CC-BY-4.0",
+  "citation": "Verdoucq et al. 2025, Flocking phase transition and threat responses in bio-inspired autonomous drone swarms",
+  "use": "A (backup)",
+  "downloaded": "2026-10-01"
+ },
+ {
+  "dataset": "bubbles2022",
+  "file": "DroneFlightDataset.zip",
+  "bytes": 17646587,
+  "sha256": "50c62d152bac085263abb9eaf4a6cf4ed9116f20bbc8cbc6b27fdc0d81f50e4c",
+  "source": "https://zenodo.org/records/7437990",
+  "doi": "10.5281/zenodo.7437990",
+  "license": "CC-BY-4.0",
+  "citation": "Datasets from BUBBLES validation exercises (UPV, EU grant 893206)",
+  "use": "screened out (A5)",
+  "downloaded": "2026-10-01"
+ }
+]

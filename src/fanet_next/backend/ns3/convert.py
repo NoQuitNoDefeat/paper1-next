@@ -19,8 +19,9 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ...contracts import CycleFacts, QueueSnapshot, Report
-from ...physics import lin_to_db, path_gain, set_sinr
+from ...physics import db_to_lin, lin_to_db, set_sinr
 from ...scenario.base import Scenario
+from ...scenario.channel import ChannelModel, IdealChannel
 from ...scenario.routing import Routing
 
 NS = 1_000_000_000
@@ -48,6 +49,9 @@ class Episode:
     service_bytes: int
     source_of: dict[int, int] = field(default_factory=dict)
     dest_of: dict[int, int] = field(default_factory=dict)
+    # private execution gains per cycle (the PHY's channel); empty = the observed gains
+    exec_gains: list[np.ndarray] = field(default_factory=list)
+    plan_threshold: float = 0.0  # Report.threshold: decoding threshold x fade margin
 
 
 def _routes(next_hop: np.ndarray) -> list[dict]:
@@ -100,11 +104,22 @@ def radio_settings(scenario: Scenario, *, motion: bool, center_hz: float = 2.4e9
 
 
 def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: str = "rehome",
-                  wireless: dict | None = None) -> Episode:
+                  wireless: dict | None = None, channel: ChannelModel | None = None,
+                  seed: int = 0) -> Episode:
     """INIT payload.  Without ``wireless`` ns-3 runs its frozen full-SINR ledger on the
     observed gains (the lightweight backend's execution, used for alignment); with it,
-    DATA is executed by the PHY (:func:`radio_settings`)."""
+    DATA is executed by the PHY (:func:`radio_settings`).
+
+    A non-ideal ``channel`` (PHY only) gives the scheduler its estimate and the PHY a
+    private execution gain per cycle (wireless ``frames``), drawn from ``seed`` in the
+    lightweight backend's order (reset, then one ``execution`` per cycle), so both
+    backends see the same fading; ns-3 moves the nodes itself, so the draws are taken at
+    the boundary positions (``ChannelModel.execution_at``)."""
     sc, radio = scenario, scenario.radio
+    channel = IdealChannel() if channel is None else channel
+    ideal = isinstance(channel, IdealChannel)
+    if not ideal and (wireless is None or not channel.deterministic_estimate):
+        raise ValueError("a non-ideal channel needs PHY execution and a deterministic estimate")
     n, horizon, ps = sc.num_nodes, sc.horizon, sc.packet_size
     period_ns = int(round(sc.cycle_length * NS))
     rate = int(radio.rate_bps // 8)
@@ -116,7 +131,12 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
     qlinks = np.asarray(sc.queue_links, dtype=np.int64)
     positions = [sc.positions(k) for k in range(horizon + 1)]
     velocities = [sc.velocities(k) for k in range(horizon + 1)]
-    gains = [path_gain(p, radio) for p in positions]
+    rng = np.random.default_rng(seed)
+    channel.reset(n, rng)
+    gains = [channel.estimate(p, radio, rng) for p in positions]
+    exec_gains = ([] if ideal else
+                  [channel.execution_at(positions[k], radio, rng) for k in range(horizon)]
+                  + [gains[horizon]])  # the final boundary is never executed
     ratios = [power[:, None] * g / (threshold * noise) for g in gains]
 
     def table(k):
@@ -165,8 +185,9 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
         frames.append({"start_ns": start, "services": services, "births": births,
                        "route_updates": updates})
 
-    def physical(k):
-        snr = ratios[k] * threshold
+    def physical(k, gain):
+        # the edge set always comes from the observed gains: the PHY's private frames keep it
+        snr = power[:, None] * gain / noise
         links = [{"key": [int(u), int(v)], "base_quality_db": float(lin_to_db(snr[u, v])),
                   "rate_bytes_per_second": rate, "sinr_threshold": float(threshold),
                   "success_probability": 1.0}
@@ -179,24 +200,29 @@ def build_episode(scenario: Scenario, routing: Routing, *, stale_queue_policy: s
                 "links": links,
                 # every (tx, rx) pair, including a node with itself (zero gain): the bridge
                 # requires the complete interference path between any two link endpoints
-                "gains": [{"sender": s, "receiver": r, "gain": float(gains[k][s, r])}
+                "gains": [{"sender": s, "receiver": r, "gain": float(gain[s, r])}
                           for s in range(n) for r in range(n)],
                 "noise_w": float(noise), "channel_id": 0}
 
     payload = {"config": config, "initial": initial, "trajectory": {"frames": frames},
-               "physical_inputs": [physical(k) for k in range(horizon + 1)],
+               "physical_inputs": [physical(k, gains[k]) for k in range(horizon + 1)],
                "metadata": dict.fromkeys(("feature_schema_sha256", "history_sha256",
                                           "reward_sha256", "checkpoint_sha256"))}
     if wireless is not None:
-        # the private execution channel is the scenario's own geometry, i.e. the observed
-        # physical input (ideal channel); ns-3 uses physical_inputs when "frames" is absent
+        # ideal channel: the private execution channel is the observed physical input and is
+        # not sent twice (ns-3 uses physical_inputs when "frames" is absent)
         payload["wireless"] = dict(wireless)
+        if exec_gains:
+            payload["wireless"]["frames"] = [physical(k, exec_gains[k])
+                                             for k in range(horizon + 1)]
     else:
         payload["execution_profile"] = "full-sinr-v1"
     return Episode(payload=payload, period_ns=period_ns, horizon=horizon, packet_size=ps,
                    qlinks=qlinks, positions=positions, velocities=velocities, gains=gains,
                    next_hops=next_hops, power=power, noise=noise, threshold=threshold,
-                   service_bytes=radio.service_bytes, source_of=source_of, dest_of=dest_of)
+                   service_bytes=radio.service_bytes, source_of=source_of, dest_of=dest_of,
+                   exec_gains=exec_gains,
+                   plan_threshold=threshold * float(db_to_lin(channel.fade_margin_db)))
 
 
 def result_capacity(payload: dict, physical_bytes: int) -> int:
@@ -250,7 +276,7 @@ def report_from(obs: dict, ep: Episode, *, run_id: str, episode: int) -> Report:
         run_id=run_id, episode=episode, cycle=k, time=sampled / NS,
         cycle_length=ep.period_ns / NS, num_nodes=n, positions=ep.positions[k],
         velocities=ep.velocities[k], gain=ep.gains[k], tx_power=ep.power.copy(),
-        noise=ep.noise, threshold=ep.threshold, service_bytes=ep.service_bytes,
+        noise=ep.noise, threshold=ep.plan_threshold, service_bytes=ep.service_bytes,
         packet_size=ep.packet_size, queue_links=ep.qlinks.copy(),
         queues=_queue_snapshot(obs["queues"], ep.packet_size, sampled),
         route_next=(next_hop[u] == v[:, None]).any(axis=1), next_hop=next_hop,
@@ -270,7 +296,8 @@ def facts_from(cycle: dict, ep: Episode, k: int, radio: dict | None = None) -> C
     succeeded = tuple(l for l in planned if served.get(l, 0) > 0)
     failed = tuple(l for l in planned if served.get(l, 0) == 0)
     links = np.array(planned, dtype=np.int64).reshape(-1, 2)
-    exec_sinr = set_sinr(links, ep.gains[k], ep.power, ep.noise)
+    exec_sinr = set_sinr(links, ep.exec_gains[k] if ep.exec_gains else ep.gains[k], ep.power,
+                         ep.noise)
     post = cycle["post_service"]
     events = cycle["events"]
     delivered = [e for e in events if e["kind"] == "delivery"]

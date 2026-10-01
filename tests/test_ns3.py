@@ -89,6 +89,24 @@ def test_static_phy_fails_exactly_the_links_below_threshold(interference):
     assert sum(len(f.delivered_ids) for f in facts) > 0
 
 
+def test_static_phy_with_rician_fading_fails_exactly_the_faded_links_below_threshold():
+    """Rician channel (decisions.md §10): the PHY executes the private faded gains, so a
+    link fails iff its cumulative SINR on those gains is below the decoding threshold;
+    the scheduler planned with the fade margin, and fading still fails some links."""
+    facts = _phy_run({"backend": {"type": "ns3", "motion": False,
+                                  "channel": {"type": "rician", "k_factor_db": 10.0}},
+                      "scenario": {"horizon": 80,
+                                   "radio": {"pathloss_exponent": 2.2, "tx_power_dbm": 13.379}}},
+                     10_000_019, horizon=80)
+    th = 10 ** (4.771212547196624 / 10)
+    failed_total = 0
+    for f in facts:
+        below = {l for l, s in zip(f.planned, f.exec_sinr) if s < th * (1 - 1e-9)}
+        assert set(f.failed) == below, f.cycle
+        failed_total += len(f.failed)
+    assert failed_total > 0 and sum(len(f.delivered_ids) for f in facts) > 0
+
+
 @pytest.mark.parametrize("policy,seed", [("longest_queue", 10_000_016), ("random", 10_000_017)])
 def test_lockstep_alignment_with_lightweight_backend(policy, seed):
     from fanet_next.backend.ns3.alignment import align_episode

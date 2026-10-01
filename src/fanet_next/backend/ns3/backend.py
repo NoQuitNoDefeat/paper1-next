@@ -44,8 +44,12 @@ class Ns3Backend(Backend):
                  motion: bool = True, radio: dict | None = None, ns3_root: str | None = None,
                  timeout_seconds: float = 60.0):
         self.channel = CHANNEL.build(channel)
-        if not isinstance(self.channel, IdealChannel):
-            raise ValueError("ns3 backend executes the scenario's own geometry (ideal channel)")
+        if not isinstance(self.channel, IdealChannel) and (
+                execution != "phy" or not self.channel.deterministic_estimate):
+            # the ledger executes the observed gains; private PHY frames are precomputed, so
+            # the scheduler's estimate must be reproducible without the backend's draws
+            raise ValueError("ns3 backend: a non-ideal channel needs execution='phy' and a "
+                             "deterministic estimate (e.g. 'rician')")
         self.routing: Routing = ROUTING.build(routing)
         if stale_queue_policy not in {"rehome", "keep"}:
             raise ValueError("stale_queue_policy must be 'rehome' or 'keep'")
@@ -93,7 +97,8 @@ class Ns3Backend(Backend):
         wireless = (radio_settings(scenario, motion=self.motion, **self.radio_options)
                     if self.execution == "phy" else None)
         self._ep = build_episode(scenario, self.routing,
-                                 stale_queue_policy=self.stale_queue_policy, wireless=wireless)
+                                 stale_queue_policy=self.stale_queue_policy, wireless=wireless,
+                                 channel=self.channel, seed=seed)
         body = encode_value(self._ep.payload, limit=1 << 30)
         physical = max(len(encode_value(p)) for p in self._ep.payload["physical_inputs"])
         tx = _mib(len(body) + HEADER.size + 4096)

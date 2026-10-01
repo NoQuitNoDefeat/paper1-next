@@ -1,0 +1,72 @@
+{
+ "name": "E12 信道真实化：C0 原信道 / C1 只改路径损耗指数 / C2 实测参数（测试集新种子，方法冻结）",
+ "out": "results/e12/channel",
+ "main": "主方法",
+ "eval": {
+  "split": "test",
+  "seed_offset": 4000,
+  "episodes": 64,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "c0_default": [],
+  "c0_load_5_15": [
+   "scenario.flow_rate_pps=[5.0, 15.0]"
+  ],
+  "c0_nodes24_same_density": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ],
+  "c1_default": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379"
+  ],
+  "c2_default": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379",
+   "backend.channel={type=\"rician\", k_factor_db=10.0}"
+  ],
+  "c2_load_5_15": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379",
+   "backend.channel={type=\"rician\", k_factor_db=10.0}",
+   "scenario.flow_rate_pps=[5.0, 15.0]"
+  ],
+  "c2_nodes24_same_density": [
+   "scenario.radio.pathloss_exponent=2.2",
+   "scenario.radio.tx_power_dbm=13.379",
+   "backend.channel={type=\"rician\", k_factor_db=10.0}",
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ]
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure",
+  "backpressure_opt",
+  "max_weight_opt"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2",
+   "results/e9/final-s3",
+   "results/e9/final-s4"
+  ],
+  "Zhao-GCN": [
+   "results/e11/runs/zhao_gcn-s0",
+   "results/e11/runs/zhao_gcn-s1",
+   "results/e11/runs/zhao_gcn-s2"
+  ]
+ },
+ "shard_policies": {
+  "max_weight_opt": 4,
+  "backpressure_opt": 4
+ }
+}
