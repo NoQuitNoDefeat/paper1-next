@@ -17,3 +17,6 @@ simulator/ns-3-external-contrib/fanet-scheduler/test/*-tests*
 # public datasets: raw downloads and derived scene files (provenance in data/sources.json)
 data/raw/
 data/processed/
+
+# third-party tools built locally (BonnMotion: GPL-2.0, github.com/sys-uos/BonnMotion)
+third_party/

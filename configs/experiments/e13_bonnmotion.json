@@ -1,0 +1,76 @@
+{
+ "name": "E13 BonnMotion：RPGM 与高斯-马尔可夫（只换移动模型；零样本与重新训练）",
+ "out": "results/e13/bonnmotion",
+ "main": "主方法",
+ "eval": {
+  "split": "test",
+  "seed_offset": 5000,
+  "episodes": 64,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "rpgm": {
+   "scenario": "configs/datasets/bonnmotion_rpgm.toml"
+  },
+  "gauss_markov": {
+   "scenario": "configs/datasets/bonnmotion_gauss_markov.toml"
+  }
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure",
+  "backpressure_opt",
+  "max_weight_opt"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2",
+   "results/e9/final-s3",
+   "results/e9/final-s4"
+  ],
+  "Zhao-GCN": [
+   "results/e11/runs/zhao_gcn-s0",
+   "results/e11/runs/zhao_gcn-s1",
+   "results/e11/runs/zhao_gcn-s2"
+  ],
+  "主方法·重训": {
+   "rpgm": [
+    "results/e13/runs/bm-rpgm-main-s0",
+    "results/e13/runs/bm-rpgm-main-s1",
+    "results/e13/runs/bm-rpgm-main-s2",
+    "results/e13/runs/bm-rpgm-main-s3",
+    "results/e13/runs/bm-rpgm-main-s4"
+   ],
+   "gauss_markov": [
+    "results/e13/runs/bm-gauss_markov-main-s0",
+    "results/e13/runs/bm-gauss_markov-main-s1",
+    "results/e13/runs/bm-gauss_markov-main-s2",
+    "results/e13/runs/bm-gauss_markov-main-s3",
+    "results/e13/runs/bm-gauss_markov-main-s4"
+   ]
+  },
+  "Zhao-GCN·重训": {
+   "rpgm": [
+    "results/e13/runs/bm-rpgm-zhao-s0",
+    "results/e13/runs/bm-rpgm-zhao-s1",
+    "results/e13/runs/bm-rpgm-zhao-s2"
+   ],
+   "gauss_markov": [
+    "results/e13/runs/bm-gauss_markov-zhao-s0",
+    "results/e13/runs/bm-gauss_markov-zhao-s1",
+    "results/e13/runs/bm-gauss_markov-zhao-s2"
+   ]
+  }
+ },
+ "shard_policies": {
+  "max_weight_opt": 4,
+  "backpressure_opt": 4
+ }
+}

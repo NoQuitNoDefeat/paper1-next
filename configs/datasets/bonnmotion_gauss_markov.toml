@@ -1,0 +1,29 @@
+# 第三方移动模型：BonnMotion v3.0.1 的高斯-马尔可夫（GPL-2.0，github.com/sys-uos/BonnMotion）。
+# 由 tools/data/build_bonnmotion.py 生成：轨迹在 data/processed/bonnmotion/gauss_markov/（不进 git）。
+# 只换移动模型，其余与合成训练场景一致（16 节点，300 m，80-120 m，5-30 m/s）。
+extends = "../protocol_final.toml"
+name = "bonnmotion-gauss_markov"
+
+[scenario]
+type = "trace"
+dir = "data/processed/bonnmotion/gauss_markov"
+train = ['train_001', 'train_002', 'train_003', 'train_004', 'train_005', 'train_006', 'train_007', 'train_008', 'train_009', 'train_010', 'train_011', 'train_012', 'train_013', 'train_014', 'train_015', 'train_016', 'train_017', 'train_018', 'train_019', 'train_020']
+dev = ['dev_101', 'dev_102', 'dev_103', 'dev_104']
+test = ['test_201', 'test_202', 'test_203', 'test_204', 'test_205', 'test_206', 'test_207', 'test_208']
+num_nodes = 16
+flow_rate_pps = [10.0, 30.0]
+cycle_length = 0.02
+horizon = 500
+packet_size = 1024
+queue_capacity = 64
+waiting_capacity = 16
+waiting_max_wait = 1.0
+
+[scenario.radio]
+tx_power_dbm = 20.0
+noise_dbm = -80.0
+pathloss_ref_db = 40.05
+pathloss_exponent = 2.5
+sinr_threshold_db = 4.771212547196624
+rate_bps = 4e6
+service_window_s = 0.02

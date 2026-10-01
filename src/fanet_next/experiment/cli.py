@@ -33,8 +33,19 @@ KEYS = ("delivery_ratio", "ontime_1s", "ontime_2s", "e2e_delay_mean_s", "e2e_del
         "exec_failed_link_frac", "sinr_violation_cycle_frac", "reward_mean", "decision_ms_mean")
 
 
+def _train_config(args) -> dict:
+    """--config, then the scenario section of --scenario (a dataset scene), then --set."""
+    from ..config import apply_override
+    cfg = load_config(args.config)
+    if getattr(args, "scenario", None):
+        cfg["scenario"] = load_config(args.scenario)["scenario"]
+    for item in args.set or []:
+        apply_override(cfg, item)
+    return cfg
+
+
 def _cmd_train(args) -> None:
-    cfg = load_config(args.config, args.set)
+    cfg = _train_config(args)
     run_dir = Path(args.run_dir or f"results/{cfg.get('name', 'run')}-s{cfg.get('seed', 0)}-"
                                    f"{time.strftime('%Y%m%d-%H%M%S')}")
     if (run_dir / "checkpoints" / "latest.pt").exists():
@@ -144,6 +155,8 @@ def main(argv: list[str] | None = None) -> None:
     t = sub.add_parser("train")
     t.add_argument("--config", required=True)
     t.add_argument("--set", action="append", default=[], help="override, e.g. training.lr=1e-4")
+    t.add_argument("--scenario", help="replace the scenario section with this config file's "
+                   "(e.g. configs/datasets/flock30.toml), before --set")
     t.add_argument("--run-dir")
     t.add_argument("--iterations", type=int)
     r = sub.add_parser("resume")
@@ -185,6 +198,7 @@ def main(argv: list[str] | None = None) -> None:
     tb = sub.add_parser("train-baseline", help="train a learned baseline (config [baseline])")
     tb.add_argument("--config", required=True)
     tb.add_argument("--set", action="append", default=[])
+    tb.add_argument("--scenario", help="replace the scenario section with this config file's, before --set")
     tb.add_argument("--run-dir")
     tb.add_argument("--iterations", type=int)
     sel = sub.add_parser("select", help="pick a checkpoint by the fixed reliability-first rule")
@@ -208,7 +222,7 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_resume(args)
     elif args.cmd == "train-baseline":
         from .train_baseline import BaselineRun
-        cfg = load_config(args.config, args.set)
+        cfg = _train_config(args)
         run_dir = Path(args.run_dir or f"results/{cfg.get('name', 'baseline')}-s{cfg.get('seed', 0)}")
         if (run_dir / "checkpoints" / "latest.pt").exists():
             raise SystemExit(f"{run_dir} already has a checkpoint")

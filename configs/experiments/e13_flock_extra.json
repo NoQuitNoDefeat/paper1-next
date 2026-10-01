@@ -1,0 +1,84 @@
+{
+ "name": "E13 群集 30 附加条件（零样本，3 次测试飞行）",
+ "out": "results/e13/flock_extra",
+ "main": "主方法",
+ "eval": {
+  "split": "test",
+  "seed_offset": 5100,
+  "episodes": 64,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "n30": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"4mps_diagonal\", \"6mps_circular\", \"8mps_circular\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}",
+    "scenario.num_nodes=30"
+   ]
+  },
+  "load_5_15": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"4mps_diagonal\", \"6mps_circular\", \"8mps_circular\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}",
+    "scenario.flow_rate_pps=[5.0, 15.0]"
+   ]
+  },
+  "ideal": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"4mps_diagonal\", \"6mps_circular\", \"8mps_circular\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31"
+   ]
+  },
+  "r161": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"4mps_diagonal\", \"6mps_circular\", \"8mps_circular\"]",
+    "scenario.train=[]",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}"
+   ]
+  }
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure",
+  "backpressure_opt",
+  "max_weight_opt"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2",
+   "results/e9/final-s3",
+   "results/e9/final-s4"
+  ],
+  "Zhao-GCN": [
+   "results/e11/runs/zhao_gcn-s0",
+   "results/e11/runs/zhao_gcn-s1",
+   "results/e11/runs/zhao_gcn-s2"
+  ]
+ },
+ "exclude": {
+  "n30": [
+   "max_weight_opt",
+   "backpressure_opt"
+  ]
+ },
+ "shard_policies": {
+  "max_weight_opt": 4,
+  "backpressure_opt": 4
+ }
+}

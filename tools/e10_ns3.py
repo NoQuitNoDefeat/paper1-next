@@ -49,6 +49,8 @@ def policies(spec: dict) -> dict[str, dict]:
         out[name] = {"args": ["--run-dir", run_dir, "--checkpoint", ckpt, "--policies", "ppo"],
                      "runs": None}
     for name, runs in spec["groups"].items():
+        # a list of run dirs, or {scenario: [run dirs]} for models trained per scenario
+        # (e.g. one fold of a dataset each); such a group is evaluated only there
         out[name] = {"args": None, "runs": runs}
     for name, c in spec.get("controls", {}).items():
         sets = [a for s in c["set"] for a in ("--set", s)]
@@ -64,9 +66,10 @@ def result_files(spec: dict, scenario: str, executor: str, name: str) -> list[tu
               else spec.get("shard_policies", {}).get(name, 1))  # heavy lightweight jobs
     per = e["episodes"] // shards
     p = policies(spec)[name]
-    targets = ([(p["args"], slug(name))] if p["runs"] is None else
+    runs = p["runs"].get(scenario, []) if isinstance(p["runs"], dict) else p["runs"]
+    targets = ([(p["args"], slug(name))] if runs is None else
                [(["--run-dir", r, "--checkpoint", "@selected", "--policies", "ppo"], slug(r))
-                for r in p["runs"]])
+                for r in runs])
     out = []
     for args, stem in targets:
         for i in range(shards):
@@ -92,7 +95,13 @@ def build_jobs(spec: dict) -> list[list[str]]:
                     cmd = [CLI, "eval", *args, "--split", e["split"], "--drain", str(e["drain"]),
                            "--threads", "1", "--num-envs", "1", "--out", str(f)]
                     cmd += ["--backend", backend] if backend else []
-                    cmd += [a for o in overrides for a in ("--set", o)]
+                    # a scenario is a list of --set overrides, or {"scenario": dataset config
+                    # file (replaces the scenario section), "set": [overrides]}
+                    sets = overrides
+                    if isinstance(overrides, dict):
+                        cmd += ["--scenario", overrides["scenario"]] if overrides.get("scenario") else []
+                        sets = overrides.get("set", [])
+                    cmd += [a for o in sets for a in ("--set", o)]
                     jobs.append(cmd)
     return jobs
 
@@ -202,7 +211,7 @@ def status(spec: dict) -> str:
 def load_rows(spec, scenario, executor, name) -> list[list[dict]] | None:
     """Rows per run (one list for a single policy, one per training seed for a group)."""
     files = result_files(spec, scenario, executor, name)
-    if not all(f.exists() for _, f in files):
+    if not files or not all(f.exists() for _, f in files):
         return None
     runs: dict[str, list[dict]] = {}
     for _, f in files:
