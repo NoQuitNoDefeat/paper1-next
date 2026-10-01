@@ -14,11 +14,11 @@
 
 实验在 Python 轻量环境中训练和评估，并用 ns-3 物理层执行复核。评价以交付率为先，时延次之。
 
-**当前状态**：E1–E12 已完成。
+**当前状态**：E1–E13 已完成。
 
 - 方法已定稿，配置为 `configs/protocol_final.toml`。
-- 测试集评估（E9）、ns-3 验证（E10）、与 12 个外部基线的比较（E11）、按实测文献标定的信道下的复核（E12）都已完成。
-- 正在进行：按整套数据接入公开数据（docs/data-screening.md），数据驱动的评估将是 E13。
+- 测试集评估（E9）、ns-3 验证（E10）、与 12 个外部基线的比较（E11）、按实测文献标定的信道下的复核（E12/E12b）、真实轨迹与第三方移动模型上的评估（E13）都已完成。
+- 公开数据的筛选与使用见 docs/data-screening.md。
 
 ## 2. 阅读前要知道的几点
 
@@ -43,7 +43,7 @@
 | 研究问题与方法含义 | `docs/research-method.md` 第 1–5 节，再读 `docs/decisions.md` 第 5b 节 |
 | 代码如何组织、组件如何替换 | `docs/architecture.md` |
 | 环境语义与各项选择的依据 | `docs/decisions.md` |
-| 结果 | `docs/experiments.md` 中的“E9 结果”“E10 结果”“E11 结果一至三”“E11 总结”和“E12 结果” |
+| 结果 | `docs/experiments.md` 中的“E9 结果”“E10 结果”“E11 结果一至三”“E11 总结”“E12b 结果”和“E13 结果” |
 | 局限与待办 | `docs/known-issues.md` |
 
 **主方法的代码路径**（均在 `src/fanet_next/` 下）：
