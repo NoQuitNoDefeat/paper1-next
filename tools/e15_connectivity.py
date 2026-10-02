@@ -11,6 +11,7 @@ power equals C2's, leaving only the spread.
 
 from __future__ import annotations
 
+import json
 import math
 
 import numpy as np
@@ -58,14 +59,17 @@ def main() -> None:
         rows.append((f"C2 + 阴影 σ = {sigma:g} dB，功率归一（dB 均值 {shift:+.2f}）",
                      {**c2, "tx_power_dbm": c2["tx_power_dbm"] + shift},
                      {"type": "rician", "k_factor_db": 10.0, "shadowing_db": sigma}))
+    table = []
     lines = ["# E15 机理检查：可用链路与可达业务（与方法无关）", "",
              "默认场景族，40 个训练种子，回合开始时。可用链路 = 平均 SNR 达到规划门限的节点对。", "",
              "| 信道 | 可用节点对比例 | 有路由的业务比例 | 平均跳数 |", "| --- | --- | --- | --- |"]
     for label, radio, channel in rows:
         f, r, h = stats(radio, channel)
+        table.append({"label": label, "usable": f, "routable": r, "hops": h})
         lines.append(f"| {label} | {f:.3f} | {r:.3f} | {h:.2f} |")
     text = "\n".join(lines)
     (ROOT / "results/e15/connectivity.md").write_text(text + "\n")
+    (ROOT / "results/e15/connectivity.json").write_text(json.dumps(table, ensure_ascii=False, indent=1))
     print(text)
 
 

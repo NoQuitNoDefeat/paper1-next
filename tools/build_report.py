@@ -118,7 +118,30 @@ def main() -> None:
         "e13b_note": "，包括同样在群集数据上重新训练的全部学习基线（E13b）" if e13["flock_spec"] == "e13b" else "",
         "e14_tag": "完成" if d["e14"] else "进行中", "e15_tag": "完成" if d["e15"] else "进行中",
     })
-    html = TEMPLATE
+    if d["e14"]:
+        x = d["e14"]
+        lq_b, lq_o = x["主方法·宽"]["longest_queue"], x["主方法"]["longest_queue"]
+        facts.update({
+            "e14_f30_orig": fmt_pp(lq_o["flock30"]["delivery_ratio"]["m"]),
+            "e14_f30_broad": fmt_pp(lq_b["flock30"]["delivery_ratio"]["m"]),
+            "e14_slow_orig": fmt_pp(lq_o["slow_compact"]["delivery_ratio"]["m"]),
+            "e14_slow_broad": fmt_pp(lq_b["slow_compact"]["delivery_ratio"]["m"]),
+            "e14_speed_orig": fmt_pp(lq_o["speed_0_5"]["delivery_ratio"]["m"]),
+            "e14_speed_broad": fmt_pp(lq_b["speed_0_5"]["delivery_ratio"]["m"]),
+            "e14_default": fmt_pp(x["broad_vs_orig"]["主方法·宽"]["default"]["delivery_ratio"]["m"]),
+        })
+    if d["e15"]:
+        y = d["e15"]
+        eff = [r["delivery_ratio"]["m"] for n in y["effect"].values() for r in n.values()]
+        lq = y["versus"]["longest_queue"]
+        facts.update({
+            "e15_eff_lo": f"{min(eff) * 100:.0f}", "e15_eff_hi": f"{max(eff) * 100:.0f}",
+            "e15_default": fmt_pp(lq["c2s5_default"]["delivery_ratio"]["m"]),
+            "e15_n24": fmt_pp(lq["c2s5_nodes24_same_density"]["delivery_ratio"]["m"]),
+            "e15_flock": fmt_pp(lq["flock_c2s5"]["delivery_ratio"]["m"]),
+        })
+    html = TEMPLATE.replace("    <!--E14-->", E14_CLAIM if d["e14"] else "")
+    html = html.replace("    <!--E15-->", E15_CLAIM if d["e15"] else "")
     for k, v in facts.items():
         html = html.replace("{{" + k + "}}", str(v))
     html = html.replace("/*DATA*/null", json.dumps(d, ensure_ascii=False))
@@ -126,6 +149,9 @@ def main() -> None:
     OUT.write_text(html)
     print(f"wrote {OUT} ({OUT.stat().st_size / 1024:.0f} KB)")
 
+
+E14_CLAIM = """    <li><strong>探索一：训练分布覆盖低速和紧凑机群（E14）。</strong>用“原分布加低速紧凑分布”的混合分布重新训练后，在群集 30 架上，主方法相对 LQ 的交付率差从 {{e14_f30_orig}} 变为 {{e14_f30_broad}} 个百分点，满足可靠性标准。在合成的低速紧凑场景中，这个差从 {{e14_slow_orig}} 变为 {{e14_slow_broad}}，在合成低速场景中从 {{e14_speed_orig}} 变为 {{e14_speed_broad}}，差距约缩小一半，但仍略低于标准。原场景不退步（{{e14_default}}），代价是平均时延略有升高（图 12、图 13）。</li>"""
+E15_CLAIM = """    <li><strong>探索二：5 dB 阴影作为控制变量（E15）。</strong>阴影已知、在 dB 上零均值时，主要作用是让网络更连通：所有方法的交付率都升高 {{e15_eff_lo}}–{{e15_eff_hi}} 个百分点。网络不再拥堵后，主方法相对 LQ 的交付率优势消失：默认场景 {{e15_default}}，24 节点 {{e15_n24}}，群集 {{e15_flock}} 个百分点，后两者的区间下界越过了标准。主方法的时延仍然更低，ns-3 结论一致（图 14）。</li>"""
 
 TEMPLATE = r"""<title>双图微步调度实验</title>
 <meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法、E1–E9 实验结果、ns-3 物理层验证（E10）、12 个外部基线（E11）、实测参数信道（E12b）、真实轨迹与第三方移动模型（E13），以及 E13b–E15 后续实验">
@@ -268,8 +294,10 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <li><strong>尾部时延仍有差距。</strong>HOL 加权基线的 p95 时延更低，但交付率显著更低。按“交付率优先”的原则，定稿方法更合适。</li>
     <li><strong>按实测文献标定的信道下仍然成立（E12b）。</strong>3 个场景族中，主方法相对 4 个对照的可靠性判定{{e12b_all_ok}}成立。相对 LQ，默认场景的交付率差为 {{e12b_dr_default}} 个百分点（下界 {{e12b_dr_default_lo}}），平均时延低 {{e12b_delay_default}} s；24 节点时交付率差为 {{e12b_dr_n24}} 个百分点。留出衰落裕量后，单跳可用距离从 161 m 缩到 118 m，默认场景下所有方法的交付率都下降 {{e12b_drop_lo}}–{{e12b_drop_hi}} 个百分点，排名不变（图 9）。</li>
     <li><strong>真实群集轨迹与第三方移动模型（E13）。</strong>在群集 30 的 3 次真实飞行（96 个场景）上，零样本主方法的交付率与 LQ 持平（{{e13_zs_dr}} 个百分点，下界 {{e13_zs_lo}}），平均时延低 {{e13_zs_delay}} s；在 BonnMotion 的两种移动模型上也满足可靠性标准。在群集数据上重新训练后，相对 LQ 的交付率差为 {{e13_rt_dr}} 个百分点（下界 {{e13_rt_lo}}），交付率在全部策略中最高{{e13b_note}}。ns-3 复核结论一致（图 10、图 11）。</li>
-    <li><strong>低速、紧凑机群是零样本的弱点。</strong>真实群集的拓扑变化比训练场景慢 4–7 倍。在 4 m/s 的飞行上，零样本主方法的交付率比 LQ 低 {{e13_f4}} 个百分点；30 架时低 {{e13_n30}} 个百分点，没有达到可靠性标准，但时延仍然更低。E14 正在探索：让训练分布覆盖这类场景，能否补上这个弱点。</li>
-    <li><strong>链路模型与实测收包相符，但实测起伏更大。</strong>在 UCSB 空地实测中，“门限加衰落”模型对各距离段收包率的预测误差为 {{ucsb_mae_rician}}，无衰落的门限模型为 {{ucsb_mae_step}}。用 RSSI 分解起伏：约 {{rssi_slow}} dB 是慢变部分，调度器可以测到；约 {{rssi_fast}} dB 是快变部分，相当于 K ≈ 5 dB 的莱斯衰落，比本模型采用的 K = 10 dB 更不稳定。E15 把 5 dB 阴影作为控制变量另做实验。</li>
+    <li><strong>低速、紧凑机群是零样本的弱点。</strong>真实群集的拓扑变化比训练场景慢 4–7 倍。在 4 m/s 的飞行上，零样本主方法的交付率比 LQ 低 {{e13_f4}} 个百分点；30 架时低 {{e13_n30}} 个百分点，没有达到可靠性标准，但时延仍然更低。</li>
+    <li><strong>链路模型与实测收包相符，但实测起伏更大。</strong>在 UCSB 空地实测中，“门限加衰落”模型对各距离段收包率的预测误差为 {{ucsb_mae_rician}}，无衰落的门限模型为 {{ucsb_mae_step}}。用 RSSI 分解起伏：约 {{rssi_slow}} dB 是慢变部分，调度器可以测到；约 {{rssi_fast}} dB 是快变部分，相当于 K ≈ 5 dB 的莱斯衰落，比本模型采用的 K = 10 dB 更不稳定。</li>
+    <!--E14-->
+    <!--E15-->
   </ul>
 
   <figure id="fig-forest">
@@ -417,6 +445,9 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     </figure>
     <h3>阴影本身的影响：同一批场景、同一组衰落样本上 C2S5 与 C2 的对比</h3>
     <div class="table-wrap"><table id="e15-effect"></table></div>
+    <h3>机理：阴影让网络更连通（与方法无关）</h3>
+    <p class="prose">默认场景族，回合开始时。调度器可用的节点对 = 平均 SNR 达到规划门限的节点对。功率归一 = 把阴影的 dB 均值下调 σ²/(2ξ)，使平均接收功率与 C2 相同；这一行只是统计，没有预登记，也没有评估。</p>
+    <div class="table-wrap"><table id="e15-conn"></table></div>
     <h3>阴影强度（默认场景族前 32 个场景）</h3>
     <div class="table-wrap"><table id="e15-sigma"></table></div>
     <div id="e15-ns3-wrap"></div>
@@ -867,6 +898,8 @@ function effectRows(effect, fams){
   if(DATA.e15){ const Y=DATA.e15; document.getElementById("e15-wrap").hidden=false;
     heat("e15-table","e15-buttons",Y.versus,rowsOf(Y.versus),Y.columns,NAMES);
     plainTable("e15-effect", ["策略", ...Y.families.map(f=>f==="flock"?"群集 30（合并）":LABEL[f])], effectRows(Y.effect, Y.families));
+    if(Y.connectivity) plainTable("e15-conn", ["信道","调度器可用的节点对","有路由的业务","平均跳数"],
+      Y.connectivity.map(x=>({cells:[x.label, x.usable.toFixed(3), x.routable.toFixed(3), x.hops.toFixed(2)]})));
     plainTable("e15-sigma", ["条件","主方法交付率","LQ 交付率","主方法 − LQ 交付率（个百分点）","平均时延差（s）"],
       Y.sigma.map(x=>({cells:[x.label, x.dr_main.toFixed(4), x.dr_lq.toFixed(4), {d:x.delivery_ratio,f:fpp}, {d:x.e2e_delay_mean_s,f:fs}]})));
     if(Y.ns3){ const w=document.getElementById("e15-ns3-wrap"); const h=document.createElement("h3"); h.textContent="ns-3 复核（C2S5 默认场景族）"; w.appendChild(h);

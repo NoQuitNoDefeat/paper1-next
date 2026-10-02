@@ -458,6 +458,8 @@ def e15() -> dict | None:
             m, lo, hi = ci(a - b)
             row[f"fid_{n}"] = {"m": m, "lo": lo, "hi": hi}
         out["ns3"] = row
+    f = ROOT / "results/e15/connectivity.json"
+    out["connectivity"] = json.loads(f.read_text()) if f.exists() else None
     return out
 
 
