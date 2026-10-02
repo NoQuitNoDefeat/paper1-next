@@ -1,0 +1,12 @@
+{
+ "name": "E14 训练分布覆盖低速和紧凑机群：全部学习方法",
+ "runs": "results/e14/runs/{scenario}-{kind}-s{seed}",
+ "scenarios": {"broad": {"scenario": "configs/explore/e14_broad.toml"}},
+ "kinds": {
+  "main": {"cmd": ["train", "--config", "configs/protocol_final.toml"], "seeds": [0, 1, 2, 3, 4], "cost": 2.5},
+  "zhao": {"cmd": ["train-baseline", "--config", "configs/baselines/zhao_gcn.toml"], "seeds": [0, 1, 2], "cost": 0.6},
+  "grlinq": {"cmd": ["train-baseline", "--config", "configs/baselines/grlinq.toml"], "seeds": [0, 1, 2], "cost": 6.0},
+  "oneshot": {"cmd": ["train-baseline", "--config", "configs/baselines/oneshot_ppo.toml"], "seeds": [0, 1, 2], "cost": 4.5},
+  "imit": {"cmd": ["train", "--config", "configs/imitation_lq.toml", "--iterations", "0"], "seeds": [0, 1, 2], "cost": 0.15}
+ }
+}

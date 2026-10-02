@@ -65,6 +65,9 @@ def test_every_scenario_source_is_well_formed(name, tmp_path):
     spec = {"type": name}
     if name == "fixed":
         spec.update(positions=[[0, 0, 100], [100, 0, 100]], births=[(0.01, 0, 1)], horizon=3)
+    if name == "mixture":
+        spec.update(base_type="random", num_nodes=5, horizon=20,
+                    components=[{}, {"speed_mps": [0.0, 5.0], "area_m": [150.0, 300.0]}])
     if name == "trace":
         t = np.arange(0.0, 30.0, 0.2)
         np.savez(tmp_path / "toy.npz", t=t, pos=np.stack([np.stack([t, 50.0 * i + t * 0, 100 + 0 * t], 1)

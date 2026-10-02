@@ -1,0 +1,38 @@
+# E14 探索（2026-10-02 起，不替代定稿配置）：训练分布覆盖低速和紧凑机群。
+# 每个回合按种子各以 1/2 的概率取：
+#   1. 原训练分布（与 base.toml 的场景完全相同，同一种子得到同一回合）；
+#   2. 低速紧凑：速度 0–5 m/s、场地 150–300 m、16–30 个节点。拓扑变化速率与群集 30 的真实飞行相当，
+#      单跳内节点对比例 0.55–0.95，覆盖最密的那次飞行（docs/experiments.md E14）。
+# 方法、奖励、训练预算与定稿主方法相同；学习基线用 `--scenario` 换上同一个场景段。
+extends = "../protocol_final.toml"
+name = "e14-broad"
+
+[scenario]
+type = "mixture"
+base_type = "random"
+weights = [0.5, 0.5]
+components = [
+  {},
+  { speed_mps = [0.0, 5.0], area_m = [150.0, 300.0], num_nodes = [16, 30] },
+]
+# 以下为两个组成部分共用的参数（与 base.toml 相同）
+num_nodes = 16
+area_m = 300.0
+altitude_m = [80.0, 120.0]
+speed_mps = [5.0, 30.0]
+flow_rate_pps = [10.0, 30.0]
+cycle_length = 0.02
+horizon = 500
+packet_size = 1024
+queue_capacity = 64
+waiting_capacity = 16
+waiting_max_wait = 1.0
+
+[scenario.radio]
+tx_power_dbm = 20.0
+noise_dbm = -80.0
+pathloss_ref_db = 40.05
+pathloss_exponent = 2.5
+sinr_threshold_db = 4.771212547196624
+rate_bps = 4e6
+service_window_s = 0.02

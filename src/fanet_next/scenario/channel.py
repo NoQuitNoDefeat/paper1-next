@@ -139,9 +139,12 @@ class RicianChannel(ChannelModel):
     def reset(self, num_nodes, rng):
         self._shadow = None
         if self.shadowing_db > 0:
+            # drawn from a spawned child stream: the episode's fading draws are the same
+            # with and without shadowing (common random numbers for paired comparisons)
+            child = rng.spawn(1)[0]
             iu = np.triu_indices(num_nodes, 1)
             s = np.ones((num_nodes, num_nodes))
-            s[iu] = db_to_lin(rng.normal(0.0, self.shadowing_db, size=len(iu[0])))
+            s[iu] = db_to_lin(child.normal(0.0, self.shadowing_db, size=len(iu[0])))
             self._shadow = np.triu(s, 1) + np.triu(s, 1).T
 
     def _mean(self, positions, radio):

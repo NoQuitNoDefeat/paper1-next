@@ -87,6 +87,22 @@ def test_shadowing_is_reciprocal_fixed_per_episode_and_known_to_the_scheduler():
     assert not np.allclose(ch.estimate(pos, radio, None), g1)
 
 
+def test_shadowing_leaves_the_fading_draws_unchanged():
+    """Same seed with and without shadowing: identical fading per pair and cycle, so a
+    shadowing on/off comparison differs in the shadowing only."""
+    radio = RadioParams(**A2A)
+    pos = np.array(line_positions(6, spacing=60.0), dtype=float)
+    fades = []
+    for shadowing_db in (0.0, 5.0):
+        ch = CHANNEL.build({"type": "rician", "shadowing_db": shadowing_db})
+        rng = np.random.default_rng(3)
+        ch.reset(6, rng)
+        mean = ch.estimate(pos, radio, rng)
+        fades.append([ch.execution_at(pos, radio, rng)[np.triu_indices(6, 1)] / mean[np.triu_indices(6, 1)]
+                      for _ in range(5)])
+    assert np.allclose(fades[0], fades[1], rtol=1e-12)
+
+
 @pytest.mark.parametrize("shadowing_db", [0.0, 2.0])
 def test_ns3_private_frames_reproduce_the_lightweight_draws(shadowing_db):
     """Static nodes (no mid-window shift): the PHY's private gains are exactly the gains the

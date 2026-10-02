@@ -1,0 +1,10 @@
+{
+ "name": "E13b 群集 30：其余可训练基线按折重新训练",
+ "runs": "results/e13b/runs/flock-{scenario}-{kind}-s{seed}",
+ "scenarios_from": "configs/experiments/e13_flock.json",
+ "kinds": {
+  "grlinq": {"cmd": ["train-baseline", "--config", "configs/baselines/grlinq.toml"], "seeds": [0, 1, 2], "cost": 4.0},
+  "oneshot": {"cmd": ["train-baseline", "--config", "configs/baselines/oneshot_ppo.toml"], "seeds": [0, 1, 2], "cost": 3.0},
+  "imit": {"cmd": ["train", "--config", "configs/imitation_lq.toml", "--iterations", "0"], "seeds": [0, 1, 2], "cost": 0.1}
+ }
+}

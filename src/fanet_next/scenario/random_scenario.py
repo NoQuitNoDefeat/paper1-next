@@ -103,13 +103,17 @@ class RandomScenario(Scenario):
 
     def describe(self) -> dict:
         d = super().describe()
-        d.update(flow_rate_pps=self.flow_rate_pps, speed_mps=self.speed_mps, flows=self.flows)
+        d.update(flow_rate_pps=self.flow_rate_pps, speed_mps=self.speed_mps, area_m=self._bounds[1][0],
+                 flows=self.flows)
         return d
 
 
 @SCENARIO.register("random", role="primary")
 class RandomScenarioSource:
-    """Random-direction 3-D mobility in a box, one Poisson flow per node, min-hop routing."""
+    """Random-direction 3-D mobility in a box, one Poisson flow per node, min-hop routing.
+
+    ``num_nodes``, ``speed_mps``, ``flow_rate_pps`` and ``area_m`` may be a [lo, hi]
+    range sampled per episode (in that order)."""
 
     def __init__(self, num_nodes=12, area_m: float = 400.0, altitude_m=(80.0, 120.0),
                  speed_mps=(5.0, 30.0), vertical_speed_mps: float = 1.0, flow_rate_pps=(30.0, 60.0),
@@ -130,4 +134,5 @@ class RandomScenarioSource:
         p["num_nodes"] = _pick(p["num_nodes"], rng, integer=True)
         p["speed_mps"] = _pick(p["speed_mps"], rng)
         p["flow_rate_pps"] = _pick(p["flow_rate_pps"], rng)
+        p["area_m"] = _pick(p["area_m"], rng)  # a scalar draws nothing: fixed-area streams unchanged
         return RandomScenario(rng=rng, radio=self.radio, **p)
