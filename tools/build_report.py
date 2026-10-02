@@ -115,6 +115,7 @@ def main() -> None:
         "rssi_slow": f"{(rssi['sigma_link_offset_db'] ** 2 + w * w * acf['2s']['corr']) ** 0.5:.1f}",
         "rssi_fast": f"{(w * w * (1 - acf['0.5s']['corr'])) ** 0.5:.1f}",
         "e13b_tag": "完成" if e13["flock_spec"] == "e13b" else "进行中",
+        "e13b_note": "，包括同样在群集数据上重新训练的全部学习基线（E13b）" if e13["flock_spec"] == "e13b" else "",
         "e14_tag": "完成" if d["e14"] else "进行中", "e15_tag": "完成" if d["e15"] else "进行中",
     })
     html = TEMPLATE
@@ -266,7 +267,7 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <li><strong>与反压是一组取舍。</strong>两个反压基线的交付率比主方法低 {{e11_bp_dr_lo}}–{{e11_bp_dr_hi}} 个百分点，但平均时延低 {{e11_bp_delay_lo}}–{{e11_bp_delay_hi}} s；它们还额外用到了“每个包发往哪里”的信息。按交付率优先，主方法更合适。每周期精确求解最大权反而交付率更低：单周期最优不等于长期最好。</li>
     <li><strong>尾部时延仍有差距。</strong>HOL 加权基线的 p95 时延更低，但交付率显著更低。按“交付率优先”的原则，定稿方法更合适。</li>
     <li><strong>按实测文献标定的信道下仍然成立（E12b）。</strong>3 个场景族中，主方法相对 4 个对照的可靠性判定{{e12b_all_ok}}成立。相对 LQ，默认场景的交付率差为 {{e12b_dr_default}} 个百分点（下界 {{e12b_dr_default_lo}}），平均时延低 {{e12b_delay_default}} s；24 节点时交付率差为 {{e12b_dr_n24}} 个百分点。留出衰落裕量后，单跳可用距离从 161 m 缩到 118 m，默认场景下所有方法的交付率都下降 {{e12b_drop_lo}}–{{e12b_drop_hi}} 个百分点，排名不变（图 9）。</li>
-    <li><strong>真实群集轨迹与第三方移动模型（E13）。</strong>在群集 30 的 3 次真实飞行（96 个场景）上，零样本主方法的交付率与 LQ 持平（{{e13_zs_dr}} 个百分点，下界 {{e13_zs_lo}}），平均时延低 {{e13_zs_delay}} s；在 BonnMotion 的两种移动模型上也满足可靠性标准。在群集数据上重新训练后，相对 LQ 的交付率差为 {{e13_rt_dr}} 个百分点（下界 {{e13_rt_lo}}），交付率在全部策略中最高。ns-3 复核结论一致（图 10、图 11）。</li>
+    <li><strong>真实群集轨迹与第三方移动模型（E13）。</strong>在群集 30 的 3 次真实飞行（96 个场景）上，零样本主方法的交付率与 LQ 持平（{{e13_zs_dr}} 个百分点，下界 {{e13_zs_lo}}），平均时延低 {{e13_zs_delay}} s；在 BonnMotion 的两种移动模型上也满足可靠性标准。在群集数据上重新训练后，相对 LQ 的交付率差为 {{e13_rt_dr}} 个百分点（下界 {{e13_rt_lo}}），交付率在全部策略中最高{{e13b_note}}。ns-3 复核结论一致（图 10、图 11）。</li>
     <li><strong>低速、紧凑机群是零样本的弱点。</strong>真实群集的拓扑变化比训练场景慢 4–7 倍。在 4 m/s 的飞行上，零样本主方法的交付率比 LQ 低 {{e13_f4}} 个百分点；30 架时低 {{e13_n30}} 个百分点，没有达到可靠性标准，但时延仍然更低。E14 正在探索：让训练分布覆盖这类场景，能否补上这个弱点。</li>
     <li><strong>链路模型与实测收包相符，但实测起伏更大。</strong>在 UCSB 空地实测中，“门限加衰落”模型对各距离段收包率的预测误差为 {{ucsb_mae_rician}}，无衰落的门限模型为 {{ucsb_mae_step}}。用 RSSI 分解起伏：约 {{rssi_slow}} dB 是慢变部分，调度器可以测到；约 {{rssi_fast}} dB 是快变部分，相当于 K ≈ 5 dB 的莱斯衰落，比本模型采用的 K = 10 dB 更不稳定。E15 把 5 dB 阴影作为控制变量另做实验。</li>
   </ul>
