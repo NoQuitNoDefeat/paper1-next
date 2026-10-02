@@ -65,10 +65,12 @@ def main() -> None:
     ap.add_argument("--flock", default="configs/experiments/e13_flock.json")
     ap.add_argument("--bonn", default="configs/experiments/e13_bonnmotion.json", help="'none' to skip")
     ap.add_argument("--out", default="results/e13/summary_pooled.md")
+    ap.add_argument("--mains", nargs="+", default=["主方法", "主方法·重训"], help="policies compared against all others")
     a = ap.parse_args()
     flock = json.loads((ROOT / a.flock).read_text())
     lines = [f"# {flock['name']}：合并汇总", "", "学习型策略先按训练种子平均，再按场景配对；均值 [95% CI]。", ""]
-    lines += table(flock, list(flock["scenarios"]), "群集 30 主条件（三折合并）")
+    title = "群集 30 主条件（三折合并）" if "e13" in a.flock else "全部测试飞行合并"
+    lines += table(flock, list(flock["scenarios"]), title, tuple(a.mains))
     if a.bonn != "none":
         bonn = json.loads((ROOT / a.bonn).read_text())
         for s in bonn["scenarios"]:

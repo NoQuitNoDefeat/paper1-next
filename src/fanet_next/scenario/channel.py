@@ -120,11 +120,12 @@ class RicianChannel(ChannelModel):
     execution multiplies it by reciprocal Rician block fading (one draw per node pair and
     cycle, unit mean) at mid-window positions; the scheduler plans against threshold x
     fade margin (margin from ``outage`` unless given).  Optional log-normal shadowing is
-    fixed per node pair and episode and known to the scheduler (decisions.md §10)."""
+    fixed per node pair and episode and known to the scheduler (decisions.md §10); with
+    ``shadowing_unit_power`` its linear mean is 1 (same mean received power, spread only)."""
 
     def __init__(self, k_factor_db: float = 10.0, outage: float = 0.1,
                  fade_margin_db: float | None = None, shadowing_db: float = 0.0,
-                 move_during_window: bool = True):
+                 shadowing_unit_power: bool = False, move_during_window: bool = True):
         if not 0.0 < outage < 1.0:
             raise ValueError("outage must lie in (0, 1)")
         self.k_factor_db = float(k_factor_db)
@@ -133,6 +134,10 @@ class RicianChannel(ChannelModel):
         self.fade_margin_db = (rician_margin_db(self.k_factor_db, self.outage)
                                if fade_margin_db is None else float(fade_margin_db))
         self.shadowing_db = float(shadowing_db)
+        # False: zero mean in dB (the usual fit convention; raises the linear mean gain by
+        # sigma^2 / (2 xi) dB, xi = 10 / ln 10).  True: dB mean -sigma^2 / (2 xi), so the linear
+        # mean gain stays 1 and only the spread is added (E15b)
+        self.shadowing_unit_power = bool(shadowing_unit_power)
         self.move_during_window = bool(move_during_window)
         self._shadow: np.ndarray | None = None
 
@@ -144,7 +149,8 @@ class RicianChannel(ChannelModel):
             child = rng.spawn(1)[0]
             iu = np.triu_indices(num_nodes, 1)
             s = np.ones((num_nodes, num_nodes))
-            s[iu] = db_to_lin(child.normal(0.0, self.shadowing_db, size=len(iu[0])))
+            mean_db = -self.shadowing_db ** 2 * np.log(10.0) / 20.0 if self.shadowing_unit_power else 0.0
+            s[iu] = db_to_lin(mean_db + child.normal(0.0, self.shadowing_db, size=len(iu[0])))
             self._shadow = np.triu(s, 1) + np.triu(s, 1).T
 
     def _mean(self, positions, radio):

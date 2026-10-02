@@ -9,7 +9,7 @@ import pytest
 from fanet_next.backend import BACKEND
 from fanet_next.backend.ns3.convert import build_episode, radio_settings
 from fanet_next.contracts import Plan
-from fanet_next.physics import RadioParams, db_to_lin, set_sinr
+from fanet_next.physics import RadioParams, db_to_lin, path_gain, set_sinr
 from fanet_next.scenario import CHANNEL, SCENARIO
 from fanet_next.scenario.channel import rician_margin_db, rician_power
 from fanet_next.scenario.routing import ROUTING
@@ -101,6 +101,28 @@ def test_shadowing_leaves_the_fading_draws_unchanged():
         fades.append([ch.execution_at(pos, radio, rng)[np.triu_indices(6, 1)] / mean[np.triu_indices(6, 1)]
                       for _ in range(5)])
     assert np.allclose(fades[0], fades[1], rtol=1e-12)
+
+
+def _shadow(sigma, unit, seed, n=60):
+    """Shadowing factors of one episode (upper triangle) as the scheduler sees them."""
+    radio = RadioParams(**A2A)
+    pos = np.array(line_positions(n, spacing=10.0), dtype=float)
+    ch = CHANNEL.build({"type": "rician", "shadowing_db": sigma, "shadowing_unit_power": unit})
+    ch.reset(n, np.random.default_rng(seed))
+    iu = np.triu_indices(n, 1)
+    return ch.estimate(pos, radio, None)[iu] / path_gain(pos, radio)[iu]
+
+
+def test_unit_power_shadowing_keeps_the_mean_gain_and_the_pattern():
+    """Same seed: the unit-power shadow is the zero-dB-mean shadow times exp(-sigma^2 / (2 xi^2))
+    (xi = 10 / ln 10); its linear mean is 1, the zero-dB-mean one's is exp(+sigma^2 / (2 xi^2))."""
+    ratio = _shadow(5.0, True, 9) / _shadow(5.0, False, 9)
+    c = np.exp(-0.5 * (5.0 * np.log(10) / 10) ** 2)
+    assert np.allclose(ratio, c)
+    unit = np.concatenate([_shadow(5.0, True, seed) for seed in range(30)])
+    zero_db = np.concatenate([_shadow(5.0, False, seed) for seed in range(30)])
+    assert unit.mean() == pytest.approx(1.0, abs=0.06)
+    assert zero_db.mean() == pytest.approx(1 / c, rel=0.06)
 
 
 @pytest.mark.parametrize("shadowing_db", [0.0, 2.0])

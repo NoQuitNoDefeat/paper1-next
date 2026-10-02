@@ -1,0 +1,30 @@
+# Verdoucq 10 架：Verdoucq 等 2025 的真实群集飞行（Zenodo 17902132，CC BY 4.0），E16 用作独立的确认数据。
+# 轨迹由 tools/data/build_verdoucq.py 生成到 data/processed/verdoucq2025/（不进 git）：
+# 只取 10 架群集机（不含入侵机）、全部在 4 m 以上的连续段、1 s 网格，整体缩放 8.57 倍。
+# 只有轨迹来自实测；业务、信道、执行由模型补齐。不在这份数据上训练：四次飞行都是测试飞行。
+extends = "../protocol_final.toml"
+name = "verdoucq10"
+
+[scenario]
+type = "trace"
+dir = "data/processed/verdoucq2025"
+train = []
+dev = []
+test = ["fig4", "fig5", "fig6", "fig7"]
+num_nodes = 10
+flow_rate_pps = [10.0, 30.0]
+cycle_length = 0.02
+horizon = 500
+packet_size = 1024
+queue_capacity = 64
+waiting_capacity = 16
+waiting_max_wait = 1.0
+
+[scenario.radio]
+tx_power_dbm = 20.0
+noise_dbm = -80.0
+pathloss_ref_db = 40.05
+pathloss_exponent = 2.5
+sinr_threshold_db = 4.771212547196624
+rate_bps = 4e6
+service_window_s = 0.02
