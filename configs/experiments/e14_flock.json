@@ -1,0 +1,177 @@
+{
+ "name": "E14 群集 30：原训练分布与宽训练分布（零样本），每次测试飞行 32 个场景，16 架与 30 架",
+ "out": "results/e14/flock",
+ "main": "主方法·宽",
+ "eval": {
+  "split": "test",
+  "seed_offset": 7000,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "f4mps": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"4mps_diagonal\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}"
+   ]
+  },
+  "f6mps": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"6mps_circular\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}"
+   ]
+  },
+  "f8mps": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"8mps_circular\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}"
+   ]
+  },
+  "f4mps_n30": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"4mps_diagonal\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}",
+    "scenario.num_nodes=30"
+   ]
+  },
+  "f6mps_n30": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"6mps_circular\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}",
+    "scenario.num_nodes=30"
+   ]
+  },
+  "f8mps_n30": {
+   "scenario": "configs/datasets/flock30.toml",
+   "set": [
+    "scenario.test=[\"8mps_circular\"]",
+    "scenario.train=[]",
+    "scenario.radio.tx_power_dbm=10.31",
+    "backend.channel={type=\"rician\", k_factor_db=10.0}",
+    "scenario.num_nodes=30"
+   ]
+  }
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure"
+ ],
+ "fixed": {
+  "仅模仿": "results/runs/imit-lq-bc-only/checkpoints/latest.pt"
+ },
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2",
+   "results/e9/final-s3",
+   "results/e9/final-s4"
+  ],
+  "主方法·宽": [
+   "results/e14/runs/broad-main-s0",
+   "results/e14/runs/broad-main-s1",
+   "results/e14/runs/broad-main-s2",
+   "results/e14/runs/broad-main-s3",
+   "results/e14/runs/broad-main-s4"
+  ],
+  "Zhao-GCN": [
+   "results/e11/runs/zhao_gcn-s0",
+   "results/e11/runs/zhao_gcn-s1",
+   "results/e11/runs/zhao_gcn-s2"
+  ],
+  "Zhao-GCN·宽": [
+   "results/e14/runs/broad-zhao-s0",
+   "results/e14/runs/broad-zhao-s1",
+   "results/e14/runs/broad-zhao-s2"
+  ],
+  "GRLinQ": [
+   "results/e11/runs/grlinq-s0",
+   "results/e11/runs/grlinq-s1",
+   "results/e11/runs/grlinq-s2"
+  ],
+  "GRLinQ·宽": [
+   "results/e14/runs/broad-grlinq-s0",
+   "results/e14/runs/broad-grlinq-s1",
+   "results/e14/runs/broad-grlinq-s2"
+  ],
+  "独立决定PPO": [
+   "results/e11/runs/oneshot_ppo-s0",
+   "results/e11/runs/oneshot_ppo-s1",
+   "results/e11/runs/oneshot_ppo-s2"
+  ],
+  "独立决定PPO·宽": [
+   "results/e14/runs/broad-oneshot-s0",
+   "results/e14/runs/broad-oneshot-s1",
+   "results/e14/runs/broad-oneshot-s2"
+  ],
+  "仅模仿·宽": [
+   "results/e14/runs/broad-imit-s0",
+   "results/e14/runs/broad-imit-s1",
+   "results/e14/runs/broad-imit-s2"
+  ],
+  "主方法·重训": {
+   "f4mps": [
+    "results/e13/runs/flock-fold_4mps-main-s0",
+    "results/e13/runs/flock-fold_4mps-main-s1",
+    "results/e13/runs/flock-fold_4mps-main-s2",
+    "results/e13/runs/flock-fold_4mps-main-s3",
+    "results/e13/runs/flock-fold_4mps-main-s4"
+   ],
+   "f6mps": [
+    "results/e13/runs/flock-fold_6mps-main-s0",
+    "results/e13/runs/flock-fold_6mps-main-s1",
+    "results/e13/runs/flock-fold_6mps-main-s2",
+    "results/e13/runs/flock-fold_6mps-main-s3",
+    "results/e13/runs/flock-fold_6mps-main-s4"
+   ],
+   "f8mps": [
+    "results/e13/runs/flock-fold_8mps-main-s0",
+    "results/e13/runs/flock-fold_8mps-main-s1",
+    "results/e13/runs/flock-fold_8mps-main-s2",
+    "results/e13/runs/flock-fold_8mps-main-s3",
+    "results/e13/runs/flock-fold_8mps-main-s4"
+   ],
+   "f4mps_n30": [
+    "results/e13/runs/flock-fold_4mps-main-s0",
+    "results/e13/runs/flock-fold_4mps-main-s1",
+    "results/e13/runs/flock-fold_4mps-main-s2",
+    "results/e13/runs/flock-fold_4mps-main-s3",
+    "results/e13/runs/flock-fold_4mps-main-s4"
+   ],
+   "f6mps_n30": [
+    "results/e13/runs/flock-fold_6mps-main-s0",
+    "results/e13/runs/flock-fold_6mps-main-s1",
+    "results/e13/runs/flock-fold_6mps-main-s2",
+    "results/e13/runs/flock-fold_6mps-main-s3",
+    "results/e13/runs/flock-fold_6mps-main-s4"
+   ],
+   "f8mps_n30": [
+    "results/e13/runs/flock-fold_8mps-main-s0",
+    "results/e13/runs/flock-fold_8mps-main-s1",
+    "results/e13/runs/flock-fold_8mps-main-s2",
+    "results/e13/runs/flock-fold_8mps-main-s3",
+    "results/e13/runs/flock-fold_8mps-main-s4"
+   ]
+  }
+ }
+}

@@ -5,10 +5,13 @@
 * BonnMotion RPGM and Gauss-Markov: same comparisons per mobility model.
 
     .venv/bin/python tools/e13_data.py
+    .venv/bin/python tools/e13_data.py --flock configs/experiments/e13b_flock.json --bonn none \
+        --out results/e13b/summary_pooled.md          # E13b: every trainable baseline retrained
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 
 import numpy as np
@@ -58,16 +61,22 @@ def table(spec: dict, scenarios: list[str], title: str, mains=("主方法", "主
 
 
 def main() -> None:
-    flock = json.loads((ROOT / "configs/experiments/e13_flock.json").read_text())
-    bonn = json.loads((ROOT / "configs/experiments/e13_bonnmotion.json").read_text())
-    lines = ["# E13 合并汇总", "", "学习型策略先按训练种子平均，再按场景配对；均值 [95% CI]。", ""]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--flock", default="configs/experiments/e13_flock.json")
+    ap.add_argument("--bonn", default="configs/experiments/e13_bonnmotion.json", help="'none' to skip")
+    ap.add_argument("--out", default="results/e13/summary_pooled.md")
+    a = ap.parse_args()
+    flock = json.loads((ROOT / a.flock).read_text())
+    lines = [f"# {flock['name']}：合并汇总", "", "学习型策略先按训练种子平均，再按场景配对；均值 [95% CI]。", ""]
     lines += table(flock, list(flock["scenarios"]), "群集 30 主条件（三折合并）")
-    for s in bonn["scenarios"]:
-        if base.load_rows(bonn, s, "lightweight", "主方法") is not None:
-            lines += table(bonn, [s], f"BonnMotion `{s}`")
+    if a.bonn != "none":
+        bonn = json.loads((ROOT / a.bonn).read_text())
+        for s in bonn["scenarios"]:
+            if base.load_rows(bonn, s, "lightweight", "主方法") is not None:
+                lines += table(bonn, [s], f"BonnMotion `{s}`")
     lines.append(f"判定：可靠性可接受 = 交付率差 95% CI 下界 ≥ {NI_MARGIN}。没有做多重比较校正。")
     text = "\n".join(lines)
-    (ROOT / "results/e13/summary_pooled.md").write_text(text + "\n")
+    (ROOT / a.out).write_text(text + "\n")
     print(text)
 
 
