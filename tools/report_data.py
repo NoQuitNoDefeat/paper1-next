@@ -21,13 +21,29 @@ SCEN_LABEL = {"default": "默认", "nodes24_dense": "24 节点·更密", "nodes2
               "load_high": "高负载", "channel_noisy": "信道有误差",
               "load_5_15": "负载 5–15", "load_20_40": "负载 20–40", "load_40_60": "负载 40–60",
               "nodes32_same_density": "32 节点", "nodes48_same_density": "48 节点",
-              "speed_0_5": "速度 0–5", "speed_30_60": "速度 30–60"}
+              "speed_0_5": "速度 0–5", "speed_30_60": "速度 30–60",
+              # E12b-E15
+              "c2_default": "C2 · 默认", "c2_load_5_15": "C2 · 负载 5–15",
+              "c2_nodes24_same_density": "C2 · 24 节点", "c2s5_default": "C2S5 · 默认",
+              "c2s5_load_5_15": "C2S5 · 负载 5–15", "c2s5_nodes24_same_density": "C2S5 · 24 节点",
+              "flock": "群集 30（三次飞行合并）", "flock_c2s5": "群集 30 · C2S5",
+              "fold_4mps": "4 m/s 斜线", "fold_6mps": "6 m/s 圆周", "fold_8mps": "8 m/s 圆周",
+              "rpgm": "BonnMotion RPGM", "gauss_markov": "BonnMotion 高斯-马尔可夫",
+              "n30": "30 架", "ideal": "理想信道", "r161": "单跳 161 m",
+              "slow_compact": "低速紧凑", "nodes30_dense": "30 节点·更密",
+              "flock16": "群集 30 · 16 架（合并）", "flock30": "群集 30 · 30 架（合并）"}
 BASELINE_LABEL = {"max_weight_opt": "精确最大权（MILP）", "backpressure_opt": "精确反压（MILP）",
                   "longest_queue": "longest_queue", "hol_weighted": "hol_weighted", "oldest_hol": "oldest_hol",
                   "backpressure": "反压（贪心）", "lq_local_search": "LQ + 局部搜索",
                   "spatial_tdma": "空间 TDMA", "random": "random", "仅模仿": "仅模仿（自有变体）",
                   "Zhao-GCN": "Zhao 等 GCN（TWC 2023）", "GRLinQ": "GRLinQ 式图强化学习",
-                  "独立决定PPO": "独立决定 PPO（同模型）"}
+                  "独立决定PPO": "独立决定 PPO（同模型）",
+                  "主方法": "定稿方法", "主方法·重训": "定稿方法 · 重训", "Zhao-GCN·重训": "Zhao 等 GCN · 重训",
+                  "GRLinQ·重训": "GRLinQ 式 · 重训", "独立决定PPO·重训": "独立决定 PPO · 重训",
+                  "仅模仿·重训": "仅模仿 · 重训", "主方法·宽": "定稿方法 · 宽分布",
+                  "Zhao-GCN·宽": "Zhao 等 GCN · 宽分布", "GRLinQ·宽": "GRLinQ 式 · 宽分布",
+                  "独立决定PPO·宽": "独立决定 PPO · 宽分布", "仅模仿·宽": "仅模仿 · 宽分布"}
+KEYS3 = ("delivery_ratio", "e2e_delay_mean_s", "e2e_delay_p95_s")
 METRICS = ["delivery_ratio", "termination_ratio", "e2e_delay_mean_s", "e2e_delay_p95_s", "ontime_2s"]
 
 
@@ -228,9 +244,227 @@ def e11() -> dict:
     return {"compare": comp, "sweeps": sweeps, "optgap": opt, "ns3": ns3, "labels": BASELINE_LABEL}
 
 
+# ---------------------------------------------------------------- E12b onwards
+def _per_scene(spec: dict, scenarios: list[str], name: str, key: str, seeds=None, executor=None):
+    """Seed-averaged per-scene values of one policy, concatenated over scenarios (None if missing)."""
+    from e10_ns3 import load_rows, seed_avg
+
+    ex = executor or next(iter(spec["executors"]))
+    out = []
+    for s in scenarios:
+        rows = load_rows(spec, s, ex, name)
+        if rows is None:
+            return None
+        if seeds is not None:
+            rows = [[r for r in run if r["seed"] in seeds] for run in rows]
+        out.append(seed_avg(rows, key))
+    return np.concatenate(out)
+
+
+def _cmp(spec: dict, scenarios: list[str], a: str, b: str, keys=KEYS3, seeds=None, executor=None,
+         scenarios_b: list[str] | None = None) -> dict | None:
+    """a - b per scene (b on ``scenarios_b`` if given, scene by scene): mean and 95% CI per metric."""
+    out = {}
+    for k in keys:
+        x = _per_scene(spec, scenarios, a, k, seeds, executor)
+        y = _per_scene(spec, scenarios_b or scenarios, b, k, seeds, executor)
+        if x is None or y is None:
+            return None
+        m, lo, hi = ci(x - y)
+        out[k] = {"m": m, "lo": lo, "hi": hi}
+    return out
+
+
+def _mean(spec: dict, scenarios: list[str], name: str, key: str, seeds=None, executor=None) -> float | None:
+    v = _per_scene(spec, scenarios, name, key, seeds, executor)
+    return None if v is None else float(np.nanmean(v))
+
+
+def _versus(spec: dict, columns: dict[str, list[str]], main: str, names: list[str]) -> dict:
+    """{other: {column: main - other}} for column -> scenarios to pool; missing cells left out."""
+    out = {}
+    for n in names:
+        if n == main:
+            continue
+        for col, scen in columns.items():
+            d = _cmp(spec, scen, main, n)
+            if d is not None:
+                out.setdefault(n, {})[col] = d
+    return out
+
+
+def _complete(spec: dict) -> bool:
+    from e10_ns3 import build_jobs
+
+    return not build_jobs(spec)
+
+
+def _first_seeds(spec: dict, scenario: str, n: int) -> set:
+    from e10_ns3 import load_rows
+
+    return set(sorted({r["seed"] for r in load_rows(spec, scenario, "lightweight", "longest_queue")[0]})[:n])
+
+
+def _effect(spec: dict, names: list[str], new: list[str], ref: list[str]) -> dict:
+    """Per policy: new - ref on the same scenes (delivery, mean delay) and both delivery means."""
+    out = {}
+    for n in names:
+        row = _cmp(spec, new, n, n, ("delivery_ratio", "e2e_delay_mean_s"), scenarios_b=ref)
+        if row is not None:
+            out[n] = {**row, "ref": _mean(spec, ref, n, "delivery_ratio"), "new": _mean(spec, new, n, "delivery_ratio")}
+    return out
+
+
+def e12b() -> dict:
+    """Measured-parameter channel C2 (E12b): main vs every policy, channel effect, sensitivity."""
+    from e10_ns3 import policies
+
+    spec = _load_spec("configs/experiments/e12b_channel.json")
+    sens = _load_spec("configs/experiments/e12b_sensitivity.json")
+    names = list(policies(spec))
+    fams = ["default", "load_5_15", "nodes24_same_density"]
+    effect = {}
+    for f in fams:
+        for n, row in _effect(spec, names, [f"c2_{f}"], [f"c0_{f}"]).items():
+            effect.setdefault(n, {})[f] = row
+    seeds = _first_seeds(spec, "c2_default", sens["eval"]["episodes"])
+    labels = {"n2.0_k10": "指数 2.0", "n2.5_k10": "指数 2.5", "n2.2_k5": "K = 5 dB", "n2.2_k15": "K = 15 dB",
+              "n2.2_k10_outage1": "中断目标 1%", "n2.2_k10_outage30": "中断目标 30%"}
+    conds = [("C2（指数 2.2，K = 10 dB，中断 10%）", spec, "c2_default", seeds)]
+    conds += [(labels.get(c, c), sens, c, None) for c in sens["scenarios"]]
+    sensitivity = []
+    for label, sp, scen, sd in conds:
+        d = _cmp(sp, [scen], "主方法", "longest_queue", ("delivery_ratio", "e2e_delay_mean_s"), sd)
+        if d is not None:
+            sensitivity.append({"label": label, "dr_main": _mean(sp, [scen], "主方法", "delivery_ratio", sd), **d})
+    return {"versus": _versus(spec, {f"c2_{f}": [f"c2_{f}"] for f in fams}, "主方法", names),
+            "columns": [f"c2_{f}" for f in fams], "effect": effect, "families": fams,
+            "sensitivity": sensitivity, "episodes": spec["eval"]["episodes"],
+            "seed_offset": spec["eval"]["seed_offset"]}
+
+
+def e13() -> dict:
+    """Real flocking trajectories and BonnMotion (E13; E13b adds every trainable baseline)."""
+    from e10_ns3 import policies
+
+    e13b = _load_spec("configs/experiments/e13b_flock.json")
+    flock = e13b if _complete(e13b) else _load_spec("configs/experiments/e13_flock.json")
+    bonn = _load_spec("configs/experiments/e13_bonnmotion.json")
+    folds = list(flock["scenarios"])
+    cols = {"flock": folds, **{f: [f] for f in folds}}
+    out = {"flock_spec": "e13b" if flock is e13b else "e13", "folds": folds,
+           "columns": ["flock", *folds, *bonn["scenarios"]]}
+    for main in ("主方法", "主方法·重训"):
+        v = _versus(flock, cols, main, list(policies(flock)))
+        for n, d in _versus(bonn, {b: [b] for b in bonn["scenarios"]}, main, list(policies(bonn))).items():
+            v.setdefault(n, {}).update(d)
+        out[main] = v
+    out["means"] = {col: {n: {k: _mean(sp, scen, n, k) for k in ("delivery_ratio", "e2e_delay_mean_s")}
+                          for n in policies(sp)}
+                    for sp, colmap in ((flock, cols), (bonn, {b: [b] for b in bonn["scenarios"]}))
+                    for col, scen in colmap.items()}
+    extra_b = _load_spec("configs/experiments/e13b_flock_extra.json")
+    extra = extra_b if _complete(extra_b) else _load_spec("configs/experiments/e13_flock_extra.json")
+    out["extra"] = _versus(extra, {s: [s] for s in extra["scenarios"]}, "主方法", list(policies(extra)))
+    out["extra_columns"] = list(extra["scenarios"])
+    ns3 = _load_spec("configs/experiments/e13_ns3.json")
+    out["ns3"] = []
+    for f in ns3["scenarios"]:
+        row = {"fold": f, **{x: _cmp(ns3, [f], "主方法", "longest_queue", ("delivery_ratio", "e2e_delay_mean_s"),
+                                     executor=x) for x in ns3["executors"]}}
+        for n in policies(ns3):
+            a = _per_scene(ns3, [f], n, "delivery_ratio", executor="ns3")
+            b = _per_scene(ns3, [f], n, "delivery_ratio", executor="lightweight")
+            m, lo, hi = ci(a - b)
+            row[f"fid_{n}"] = {"m": m, "lo": lo, "hi": hi}
+        out["ns3"].append(row)
+    out["ns3_episodes"] = ns3["eval"]["episodes"]
+    for key, path in (("ucsb", "results/e13/ucsb_linkmodel.json"), ("rssi", "results/e15/ucsb_rssi.json")):
+        f = ROOT / path
+        out[key] = json.loads(f.read_text()) if f.exists() else None
+    return out
+
+
+def e14() -> dict | None:
+    """Exploration: training mixture covering slow and compact swarms (None until complete)."""
+    from e10_ns3 import policies
+
+    syn, fl = _load_spec("configs/experiments/e14_synthetic.json"), _load_spec("configs/experiments/e14_flock.json")
+    if not (_complete(syn) and _complete(fl)):
+        return None
+    f16 = [s for s in fl["scenarios"] if not s.endswith("_n30")]
+    f30 = [s for s in fl["scenarios"] if s.endswith("_n30")]
+    cells = [*((s, syn, [s]) for s in syn["scenarios"]), ("flock16", fl, f16), ("flock30", fl, f30)]
+    out = {"columns": [c for c, _, _ in cells]}
+    for main in ("主方法·宽", "主方法"):
+        v = {}
+        for col, sp, scen in cells:
+            for n, d in _versus(sp, {col: scen}, main, list(policies(sp))).items():
+                v.setdefault(n, {}).update(d)
+        out[main] = v
+    pairs = [("主方法·宽", "主方法"), ("Zhao-GCN·宽", "Zhao-GCN"), ("GRLinQ·宽", "GRLinQ"),
+             ("独立决定PPO·宽", "独立决定PPO"), ("仅模仿·宽", "仅模仿")]
+    out["broad_vs_orig"] = {}
+    for a, b in pairs:
+        for col, sp, scen in cells:
+            d = _cmp(sp, scen, a, b)
+            if d is not None:
+                out["broad_vs_orig"].setdefault(a, {})[col] = d
+    out["means"] = {col: {n: _mean(sp, scen, n, "delivery_ratio") for n in policies(sp)} for col, sp, scen in cells}
+    return out
+
+
+def e15() -> dict | None:
+    """Exploration: 5 dB known shadowing as a controlled variable (None until complete)."""
+    from e10_ns3 import policies
+
+    ch, fl = _load_spec("configs/experiments/e15_channel.json"), _load_spec("configs/experiments/e15_flock.json")
+    sg, ns3 = _load_spec("configs/experiments/e15_sigma.json"), _load_spec("configs/experiments/e15_ns3.json")
+    if not all(_complete(s) for s in (ch, fl, sg)):
+        return None
+    fams = ["default", "load_5_15", "nodes24_same_density"]
+    folds = sorted({s.split("_", 1)[1] for s in fl["scenarios"]})
+    groups = [*((f, ch, [f"c2_{f}"], [f"c2s5_{f}"]) for f in fams),
+              ("flock", fl, [f"c2_{f}" for f in folds], [f"c2s5_{f}" for f in folds])]
+    out = {"families": [g[0] for g in groups], "columns": [f"c2s5_{f}" if f != "flock" else "flock_c2s5"
+                                                             for f, *_ in groups],
+           "versus": {}, "effect": {}, "did": {}}
+    for fam, sp, s2, s5 in groups:
+        col = "flock_c2s5" if fam == "flock" else f"c2s5_{fam}"
+        for n, d in _versus(sp, {col: s5}, "主方法", list(policies(sp))).items():
+            out["versus"].setdefault(n, {}).update(d)
+        for n, row in _effect(sp, list(policies(sp)), s5, s2).items():
+            out["effect"].setdefault(n, {})[fam] = row
+        a5 = _per_scene(sp, s5, "主方法", "delivery_ratio") - _per_scene(sp, s5, "longest_queue", "delivery_ratio")
+        a2 = _per_scene(sp, s2, "主方法", "delivery_ratio") - _per_scene(sp, s2, "longest_queue", "delivery_ratio")
+        m, lo, hi = ci(a5 - a2)
+        out["did"][fam] = {"m": m, "lo": lo, "hi": hi}
+    seeds = _first_seeds(ch, "c2_default", sg["eval"]["episodes"])
+    sigma = []
+    for label, sp, scen, sd in [("无阴影（C2）", ch, "c2_default", seeds), ("σ = 3 dB", sg, "c2s3_default", None),
+                                ("σ = 5 dB", ch, "c2s5_default", seeds), ("σ = 7 dB", sg, "c2s7_default", None),
+                                ("σ = 5 dB 且 K = 5 dB", sg, "c2s5k5_default", None)]:
+        d = _cmp(sp, [scen], "主方法", "longest_queue", ("delivery_ratio", "e2e_delay_mean_s"), sd)
+        sigma.append({"label": label, "dr_main": _mean(sp, [scen], "主方法", "delivery_ratio", sd),
+                      "dr_lq": _mean(sp, [scen], "longest_queue", "delivery_ratio", sd), **d})
+    out["sigma"] = sigma
+    out["ns3"] = None
+    if _complete(ns3):
+        row = {x: _cmp(ns3, ["c2s5_default"], "主方法", "longest_queue", ("delivery_ratio", "e2e_delay_mean_s"),
+                       executor=x) for x in ns3["executors"]}
+        for n in policies(ns3):
+            a = _per_scene(ns3, ["c2s5_default"], n, "delivery_ratio", executor="ns3")
+            b = _per_scene(ns3, ["c2s5_default"], n, "delivery_ratio", executor="lightweight")
+            m, lo, hi = ci(a - b)
+            row[f"fid_{n}"] = {"m": m, "lo": lo, "hi": hi}
+        out["ns3"] = row
+    return out
+
+
 def collect() -> dict:
     return {"e9": e9(), "e10": e10(), "e11": e11(), "curves": curves(), "ablations": ablations(),
-            "e8": summary_redesign(), "dev": dev_history(), "labels": SCEN_LABEL}
+            "e8": summary_redesign(), "dev": dev_history(), "e12b": e12b(), "e13": e13(), "e14": e14(),
+            "e15": e15(), "labels": SCEN_LABEL, "names": BASELINE_LABEL}
 
 
 if __name__ == "__main__":

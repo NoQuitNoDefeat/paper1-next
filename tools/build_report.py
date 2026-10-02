@@ -82,6 +82,41 @@ def main() -> None:
         "e10_ctrl_per": f"{ctrl['per'] * 100:.1f}", "e10_ctrl_failed": f"{ctrl['failed'] * 100:.0f}",
         "e10_ctrl_dr": f"{ctrl['dr_ns3']:.3f}", "e10_lq_dr": f"{ref_lq['dr_ns3']:.3f}",
     })
+    e12 = d["e12b"]
+    lqv = e12["versus"]["longest_queue"]
+    drop = [e12["effect"][n]["default"]["delivery_ratio"]["m"] for n in e12["effect"]]
+    facts.update({
+        "e12b_episodes": e12["episodes"],
+        "e12b_dr_default": fmt_pp(lqv["c2_default"]["delivery_ratio"]["m"]),
+        "e12b_dr_default_lo": fmt_pp(lqv["c2_default"]["delivery_ratio"]["lo"]),
+        "e12b_delay_default": f"{-lqv['c2_default']['e2e_delay_mean_s']['m']:.2f}",
+        "e12b_dr_n24": fmt_pp(lqv["c2_nodes24_same_density"]["delivery_ratio"]["m"]),
+        "e12b_dr_load": fmt_pp(lqv["c2_load_5_15"]["delivery_ratio"]["m"]),
+        "e12b_all_ok": "都" if all(c["delivery_ratio"]["lo"] >= -0.005 for v in e12["versus"].values()
+                                  for c in v.values()) else "并非都",
+        "e12b_drop_lo": f"{-max(drop) * 100:.0f}", "e12b_drop_hi": f"{-min(drop) * 100:.0f}",
+    })
+    e13 = d["e13"]
+    zs, rt = e13["主方法"]["longest_queue"], e13["主方法·重训"]["longest_queue"]
+    fid = [abs(x) for row in e13["ns3"] for k, v in row.items() if k.startswith("fid_") for x in (v["lo"], v["hi"])]
+    ucsb = e13["ucsb"][0]["models"]
+    rssi = e13["rssi"]["primary"][1]
+    w, acf = rssi["sigma_within_db"], rssi["within_autocorr"]
+    facts.update({
+        "e13_zs_dr": fmt_pp(zs["flock"]["delivery_ratio"]["m"]), "e13_zs_lo": fmt_pp(zs["flock"]["delivery_ratio"]["lo"]),
+        "e13_zs_delay": f"{-zs['flock']['e2e_delay_mean_s']['m']:.2f}",
+        "e13_rt_dr": fmt_pp(rt["flock"]["delivery_ratio"]["m"]), "e13_rt_lo": fmt_pp(rt["flock"]["delivery_ratio"]["lo"]),
+        "e13_f4": f"{-zs['fold_4mps']['delivery_ratio']['m'] * 100:.1f}",
+        "e13_n30": f"{-e13['extra']['longest_queue']['n30']['delivery_ratio']['m'] * 100:.1f}",
+        "e13_ns3_eps": e13["ns3_episodes"], "e13_ns3_fid": f"{max(fid) * 100:.2f}",
+        "ucsb_mae_rician": f"{ucsb['rician']['test_sector_mae']:.3f}", "ucsb_mae_step": f"{ucsb['step']['test_sector_mae']:.3f}",
+        "ucsb_sigma": f"{ucsb['lognormal']['params']['sigma_db']:.1f}",
+        "rssi_total": f"{rssi['sigma_total_db']:.1f}",
+        "rssi_slow": f"{(rssi['sigma_link_offset_db'] ** 2 + w * w * acf['2s']['corr']) ** 0.5:.1f}",
+        "rssi_fast": f"{(w * w * (1 - acf['0.5s']['corr'])) ** 0.5:.1f}",
+        "e13b_tag": "完成" if e13["flock_spec"] == "e13b" else "进行中",
+        "e14_tag": "完成" if d["e14"] else "进行中", "e15_tag": "完成" if d["e15"] else "进行中",
+    })
     html = TEMPLATE
     for k, v in facts.items():
         html = html.replace("{{" + k + "}}", str(v))
@@ -92,7 +127,7 @@ def main() -> None:
 
 
 TEMPLATE = r"""<title>双图微步调度实验</title>
-<meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法、E1–E9 实验结果、ns-3 物理层验证（E10）与 12 个外部基线的比较（E11）">
+<meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法、E1–E9 实验结果、ns-3 物理层验证（E10）、12 个外部基线（E11）、实测参数信道（E12b）、真实轨迹与第三方移动模型（E13），以及 E13b–E15 后续实验">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
@@ -207,12 +242,14 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
 <header>
   <div class="eyebrow">paper1-next · UAV/FANET MAC 调度 · 实验报告</div>
   <h1>双图微步调度：定稿方法与测试集结果</h1>
-  <p class="lede">在从未使用过的测试集上，定稿方法在 5 个场景族中都没有比“最长队列优先”少送包，平均时延低 {{delay_lo}}–{{delay_hi}}%，p95 时延低 {{p95_lo}}–{{p95_hi}}%。在更密、更大、更拥堵或信道有误差的场景中，最终交付率还高出 {{dr_hard_lo}}–{{dr_hard_hi}} 个百分点。在 ns-3 包级物理层上重跑 {{e10_episodes}} 个新测试场景，这些结论不变。与 {{e11_n_ext}} 个外部基线（含 3 个前人的学习方法和 2 个单周期精确最优解）相比，它在 5 个场景族中的交付率都最高。</p>
+  <p class="lede">在从未使用过的测试集上，定稿方法在 5 个场景族中都没有比“最长队列优先”少送包，平均时延低 {{delay_lo}}–{{delay_hi}}%，p95 时延低 {{p95_lo}}–{{p95_hi}}%。在更密、更大、更拥堵或信道有误差的场景中，最终交付率还高出 {{dr_hard_lo}}–{{dr_hard_hi}} 个百分点。在 ns-3 包级物理层上重跑 {{e10_episodes}} 个新测试场景，这些结论不变。与 {{e11_n_ext}} 个外部基线（含 3 个前人的学习方法和 2 个单周期精确最优解）相比，它在 5 个场景族中的交付率都最高。在按实测文献标定的空空信道上（E12b），以及在真实无人机群集轨迹和第三方移动模型上（E13），可靠性判定仍然成立，平均时延仍然更低。真实群集飞得慢、队形紧凑，零样本时在这类场景有弱点；在数据上重新训练后，交付率在全部策略中最高。</p>
   <div class="meta">
     <span>测试：{{episodes}} 个场景 × 5 个场景族，排空 {{drain}} 周期</span>
     <span>主方法 {{seeds_main}} 个训练种子</span>
     <span>ns-3 验证：{{e10_episodes}} 个新场景 × 2 个场景族</span>
     <span>外部基线：{{e11_n_ext}} 个，{{e11_episodes}} 个新场景 × 5 个场景族</span>
+    <span>实测参数信道：{{e12b_episodes}} 个新场景 × 3 个场景族</span>
+    <span>真实群集轨迹：3 次飞行 × 32 个场景</span>
     <span>代码 <code>{{commit}}</code></span>
     <span>生成于 {{built}}</span>
   </div>
@@ -228,6 +265,10 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <li><strong>优于前人的学习方法，“逐条选择”的设计必要。</strong>相对 {{e11_n_ext}} 个外部基线，5 个场景族中的可靠性判定{{e11_all_ok}}成立，{{e11_cells}} 个比较中有 {{e11_sig}} 个交付率显著更高。相对 3 个前人的学习方法，交付率高 {{e11_learned_lo}}–{{e11_learned_hi}} 个百分点，时延也更低。与主方法只差动作形式的“独立决定”版本，交付率低 {{e11_oneshot_lo}}–{{e11_oneshot_hi}} 个百分点（图 4）。</li>
     <li><strong>与反压是一组取舍。</strong>两个反压基线的交付率比主方法低 {{e11_bp_dr_lo}}–{{e11_bp_dr_hi}} 个百分点，但平均时延低 {{e11_bp_delay_lo}}–{{e11_bp_delay_hi}} s；它们还额外用到了“每个包发往哪里”的信息。按交付率优先，主方法更合适。每周期精确求解最大权反而交付率更低：单周期最优不等于长期最好。</li>
     <li><strong>尾部时延仍有差距。</strong>HOL 加权基线的 p95 时延更低，但交付率显著更低。按“交付率优先”的原则，定稿方法更合适。</li>
+    <li><strong>按实测文献标定的信道下仍然成立（E12b）。</strong>3 个场景族中，主方法相对 4 个对照的可靠性判定{{e12b_all_ok}}成立。相对 LQ，默认场景的交付率差为 {{e12b_dr_default}} 个百分点（下界 {{e12b_dr_default_lo}}），平均时延低 {{e12b_delay_default}} s；24 节点时交付率差为 {{e12b_dr_n24}} 个百分点。留出衰落裕量后，单跳可用距离从 161 m 缩到 118 m，默认场景下所有方法的交付率都下降 {{e12b_drop_lo}}–{{e12b_drop_hi}} 个百分点，排名不变（图 9）。</li>
+    <li><strong>真实群集轨迹与第三方移动模型（E13）。</strong>在群集 30 的 3 次真实飞行（96 个场景）上，零样本主方法的交付率与 LQ 持平（{{e13_zs_dr}} 个百分点，下界 {{e13_zs_lo}}），平均时延低 {{e13_zs_delay}} s；在 BonnMotion 的两种移动模型上也满足可靠性标准。在群集数据上重新训练后，相对 LQ 的交付率差为 {{e13_rt_dr}} 个百分点（下界 {{e13_rt_lo}}），交付率在全部策略中最高。ns-3 复核结论一致（图 10、图 11）。</li>
+    <li><strong>低速、紧凑机群是零样本的弱点。</strong>真实群集的拓扑变化比训练场景慢 4–7 倍。在 4 m/s 的飞行上，零样本主方法的交付率比 LQ 低 {{e13_f4}} 个百分点；30 架时低 {{e13_n30}} 个百分点，没有达到可靠性标准，但时延仍然更低。E14 正在探索：让训练分布覆盖这类场景，能否补上这个弱点。</li>
+    <li><strong>链路模型与实测收包相符，但实测起伏更大。</strong>在 UCSB 空地实测中，“门限加衰落”模型对各距离段收包率的预测误差为 {{ucsb_mae_rician}}，无衰落的门限模型为 {{ucsb_mae_step}}。用 RSSI 分解起伏：约 {{rssi_slow}} dB 是慢变部分，调度器可以测到；约 {{rssi_fast}} dB 是快变部分，相当于 K ≈ 5 dB 的莱斯衰落，比本模型采用的 K = 10 dB 更不稳定。E15 把 5 dB 阴影作为控制变量另做实验。</li>
   </ul>
 
   <figure id="fig-forest">
@@ -294,6 +335,94 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
 </section>
 
 <section>
+  <h2>按实测文献标定的信道（E12、E12b）</h2>
+  <p class="prose">原来的合成信道没有衰落，调度时看到的信道就是执行时的信道。E12 按空空测量文献改用实测参数：路径损耗指数 2.2，发射功率相应调整，使单跳距离仍为 161 m；莱斯块衰落 K = 10 dB，每对节点每个周期独立抽样。调度器只知道平均增益，按 10% 中断概率留 3.0 dB 衰落裕量，路由也只用留出裕量后仍能用的链路。E12 运行时，路由仍按无裕量的门限选路；修正后在新的测试种子上重跑，即 E12b。以下为 E12b 的结果，方法全部冻结，没有重新训练。</p>
+  <figure id="fig-e12b">
+    <p class="fig-title">图 9　实测参数信道（C2）下主方法相对各基线的配对差</p>
+    <p class="fig-sub">每个场景族 {{e12b_episodes}} 个新测试场景；主方法减基线，均值与 95% 置信区间。</p>
+    <div class="controls" role="group" aria-label="选择指标" id="e12b-buttons"></div>
+    <div class="table-wrap"><table class="heat" id="e12b-table"></table></div>
+    <figcaption><b>读法：</b>蓝色表示主方法显著更好，红色表示显著更差，灰色表示不显著。低负载下主方法相对 LQ 的交付率差为 {{e12b_dr_load}} 个百分点，差异显著，但仍在可靠性标准以内。</figcaption>
+  </figure>
+  <h3>信道变化本身的影响：同一批场景上 C2 与 C0 的对比</h3>
+  <p class="prose">单一速率下留出衰落裕量后，无干扰可用距离从 161 m 缩到 118 m，网络连通性下降，所有方法的交付率都明显降低。各方法的降幅相近，排名不变。真实系统会让弱链路降速继续使用；本模型只有单一速率，这是绝对性能下降的主要原因之一。</p>
+  <div class="table-wrap"><table id="e12b-effect"></table></div>
+  <p class="note">每格：C0（原信道）→ C2 的平均交付率，括号内为配对差（个百分点）及 95% 置信区间。</p>
+  <h3>敏感性：路径损耗指数、莱斯 K、中断目标</h3>
+  <p class="prose">用默认场景族的前 32 个场景。中断目标越严，裕量越大，所有方法的交付率越低；每个条件下主方法都满足可靠性标准。</p>
+  <div class="table-wrap"><table id="e12b-sens"></table></div>
+</section>
+
+<section>
+  <h2>真实轨迹与第三方移动模型（E13）</h2>
+  <p class="prose">公开数据中，没有哪次实验同时记录了多机轨迹、业务和收发记录，所以数据按用途分两类：A 类提供节点运动，用于训练和测试；B 类用来检验环境的链路模型。</p>
+  <ul class="claims prose">
+    <li>A 类用 Vásárhelyi 等 2018 年的 30 架无人机真实群集飞行（CC0），业务、信道和执行由模型补齐。按测试飞行分 3 折：每折用另外两次飞行重新训练，在开发飞行上选检查点。</li>
+    <li>第三方移动模型用 BonnMotion 生成的 RPGM（组群移动）和高斯-马尔可夫轨迹。</li>
+    <li>B 类用 UCSB 的 2.4 GHz 空地实测收包记录。</li>
+    <li>群集 30 的单跳距离取 66 m，使拓扑统计与合成场景相当；路径损耗指数 2.5，莱斯 K = 10 dB。</li>
+  </ul>
+  <figure id="fig-e13">
+    <p class="fig-title">图 10　零样本主方法相对各策略（真实轨迹与 BonnMotion）</p>
+    <p class="fig-sub">群集 30 每次测试飞行 32 个场景，三次合并共 96 个；BonnMotion 每个模型 64 个场景。“· 重训”表示在该数据集的训练部分上重新训练的版本。</p>
+    <div class="controls" role="group" aria-label="选择指标" id="e13-buttons"></div>
+    <div class="table-wrap"><table class="heat" id="e13-table"></table></div>
+    <figcaption><b>读法：</b>真实群集飞得慢、队形紧凑，拓扑变化比训练场景慢 4–7 倍。在速度最低的 4 m/s 飞行上，零样本主方法的交付率显著低于 LQ。</figcaption>
+  </figure>
+  <figure id="fig-e13rt">
+    <p class="fig-title">图 11　在数据集上重新训练的主方法相对各策略</p>
+    <p class="fig-sub">同一批场景。每折的模型只用该折以外的两次飞行训练。</p>
+    <div class="controls" role="group" aria-label="选择指标" id="e13rt-buttons"></div>
+    <div class="table-wrap"><table class="heat" id="e13rt-table"></table></div>
+  </figure>
+  <h3>群集 30 附加条件（零样本，3 次测试飞行共 64 个场景）</h3>
+  <div class="controls" role="group" aria-label="选择指标" id="e13x-buttons"></div>
+  <div class="table-wrap"><table class="heat" id="e13x-table"></table></div>
+  <p class="note">30 架时不跑两个 MILP 基线。</p>
+  <h3>ns-3 复核</h3>
+  <p class="prose">群集 30 主条件，每折取前 {{e13_ns3_eps}} 个场景，PHY 执行加帧内运动。衰落样本通过私有执行帧传给 ns-3，与轻量环境逐周期一致。两种执行方式下交付率差的置信区间都在 ±{{e13_ns3_fid}} 个百分点以内。</p>
+  <div class="table-wrap"><table id="e13-ns3"></table></div>
+  <h3>链路模型检验（UCSB 空地实测，B 类）</h3>
+  <p class="prose">按序号还原每个包的发送时刻和收发距离，再把试验分成两半：一半拟合，一半检验。拟合采用的主配置是水平发射、无遮挡，对应水平接收。预先登记的判定成立：莱斯模型在两个指标上都优于无衰落门限模型。不过对数正态模型（σ = {{ucsb_sigma}} dB）拟合得同样好。收到的包都带 RSSI，据此可以分解起伏：总起伏 {{rssi_total}} dB，其中约 {{rssi_slow}} dB 持续 2 s 以上，约 {{rssi_fast}} dB 在 0.5 s 内就不再相关。这份数据是空对地链路，发射端在地面上，所以只作为参考证据。</p>
+  <div class="table-wrap"><table id="e13-ucsb"></table></div>
+</section>
+
+<section>
+  <h2>后续实验（E13b、E14、E15）</h2>
+  <p class="prose">以下三项是 2026-10-02 决定的后续工作。每项都在开跑前写好预登记，并另设配置和结果目录，不改动上面的配置和结论。</p>
+  <ul class="claims prose">
+    <li><strong>E13b 真实轨迹上训练全部可训练基线</strong> <span class="tag">{{e13b_tag}}</span>：GRLinQ 式、独立决定 PPO、仅模仿，与 E13 同样按折重新训练。对照扩充到 E11 的全部 13 个。完成后，图 10 和图 11 会包含这些策略。</li>
+    <li><strong>E14 探索：训练分布覆盖低速和紧凑机群</strong> <span class="tag">{{e14_tag}}</span>：每个回合以 1/2 的概率取原训练分布，以 1/2 的概率取“低速紧凑”分布。后者速度 0–5 m/s，场地 150–300 m，16–30 个节点，参数只根据与方法无关的拓扑统计确定。全部学习方法都在这个分布上重新训练，用新的测试种子评估。</li>
+    <li><strong>E15 探索：5 dB 阴影作为控制变量</strong> <span class="tag">{{e15_tag}}</span>：在实测参数信道上加入 σ = 5 dB 的对数正态阴影。阴影调度器已知。有阴影和无阴影两种条件使用同一批场景和同一组快衰落样本，各测一套，方法冻结。</li>
+  </ul>
+  <div id="e14-wrap" hidden>
+    <figure id="fig-e14">
+      <p class="fig-title">图 12　宽分布训练的主方法相对各策略（E14）</p>
+      <p class="fig-sub">合成场景族每族 64 个新场景；群集 30 每次飞行 32 个场景，16 架和 30 架各一套。</p>
+      <div class="controls" role="group" aria-label="选择指标" id="e14-buttons"></div>
+      <div class="table-wrap"><table class="heat" id="e14-table"></table></div>
+    </figure>
+    <figure id="fig-e14b">
+      <p class="fig-title">图 13　同一方法：宽分布训练减原分布训练（E14）</p>
+      <div class="controls" role="group" aria-label="选择指标" id="e14b-buttons"></div>
+      <div class="table-wrap"><table class="heat" id="e14b-table"></table></div>
+    </figure>
+  </div>
+  <div id="e15-wrap" hidden>
+    <figure id="fig-e15">
+      <p class="fig-title">图 14　有阴影（C2S5）时主方法相对各策略（E15）</p>
+      <div class="controls" role="group" aria-label="选择指标" id="e15-buttons"></div>
+      <div class="table-wrap"><table class="heat" id="e15-table"></table></div>
+    </figure>
+    <h3>阴影本身的影响：同一批场景、同一组衰落样本上 C2S5 与 C2 的对比</h3>
+    <div class="table-wrap"><table id="e15-effect"></table></div>
+    <h3>阴影强度（默认场景族前 32 个场景）</h3>
+    <div class="table-wrap"><table id="e15-sigma"></table></div>
+    <div id="e15-ns3-wrap"></div>
+  </div>
+</section>
+
+<section>
   <h2>方法</h2>
   <div class="prose">
     <p>集中式调度器在每个物理周期，从当前可获得的报告中选出一组能同时发送的一跳链路。定稿方法：</p>
@@ -321,7 +450,7 @@ flowchart LR
 
 <section>
   <h2>研究过程</h2>
-  <p class="prose">从 E5 起，每一轮实验的方案和判定规则都在看到结果之前写进文档并提交。测试集在 E9 使用了一次；E10 另取了一批没用过的测试场景。</p>
+  <p class="prose">从 E5 起，每一轮实验的方案和判定规则都在看到结果之前写进文档并提交。测试集在 E9 首次使用；之后每一轮（E10–E15）都另取一批没用过的测试种子。</p>
   <div class="timeline">
     <div class="step"><div class="id">E1</div><div><h3>首次训练 <span class="tag">开发集</span></h3>
       <p>PPO 按奖励明显优于基线，但分项显示它靠多丢包压低了队列和时延分项。</p>
@@ -352,6 +481,21 @@ flowchart LR
     <div class="step"><div class="id">E11</div><div><h3>12 个外部基线 <span class="tag">新测试场景</span></h3>
       <p>补充每周期精确最优、反压、局部搜索、空间 TDMA 和 3 个前人的学习方法；另做近似比、决策时间、负载 / 规模 / 速度扫描和 ns-3 复核。</p>
       <p class="out">→ 5 个场景族中交付率都最高；反压时延更低；节点几乎静止时有一处未达标（图 4、图 5）。</p></div></div>
+    <div class="step"><div class="id">E12</div><div><h3>实测参数信道 <span class="tag">新测试场景</span></h3>
+      <p>路径损耗指数 2.2，莱斯 K = 10 dB，按 10% 中断留 3 dB 裕量。结果出来后发现，路由仍按无裕量的门限选路，部分包落在永远不会被调度的链路上。</p>
+      <p class="out">→ 两个后端都修正路由，并补了测试；在新的测试种子上重跑（E12b）。</p></div></div>
+    <div class="step"><div class="id">E12b</div><div><h3>修正路由后重跑 <span class="tag">新测试场景</span></h3>
+      <p>预先登记的判定全部成立。所有方法的交付率因衰落裕量下降约 18–24 个百分点，排名不变；ns-3 复核一致。</p>
+      <p class="out">→ 图 9。</p></div></div>
+    <div class="step"><div class="id">E13</div><div><h3>真实轨迹、第三方移动模型、实测收包 <span class="tag">新测试场景</span></h3>
+      <p>群集 30 的真实飞行按折评估，重新训练了主方法和 Zhao-GCN；另用 BonnMotion 的 RPGM 与高斯-马尔可夫模型，以及 UCSB 空地收包记录。ns-3 不接受逐周期变速的轨迹，C++ 改为允许速度在周期边界变化。</p>
+      <p class="out">→ 预先登记的判定全部成立；低速、紧凑机群是零样本的弱点（图 10、图 11）。</p></div></div>
+    <div class="step"><div class="id">E13b</div><div><h3>真实轨迹上训练全部可训练基线 <span class="tag">{{e13b_tag}}</span></h3>
+      <p>GRLinQ 式、独立决定 PPO 和仅模仿按折重新训练；对照扩充到 E11 的全部 13 个。</p></div></div>
+    <div class="step"><div class="id">E14</div><div><h3>探索：训练分布覆盖低速和紧凑机群 <span class="tag">{{e14_tag}}</span></h3>
+      <p>以混合分布训练全部学习方法，在新的测试种子上，与原分布训练的版本比较。</p></div></div>
+    <div class="step"><div class="id">E15</div><div><h3>探索：5 dB 阴影作为控制变量 <span class="tag">{{e15_tag}}</span></h3>
+      <p>有阴影、无阴影各测一套；设计依据是 UCSB 的 RSSI 分解。</p></div></div>
   </div>
 </section>
 
@@ -391,11 +535,12 @@ flowchart LR
 <section class="prose">
   <h2>局限</h2>
   <ul class="claims">
-    <li>只在一个场景族上训练（16 节点、300 m、理想信道、单速率单信道）。困难条件的结果属于零样本泛化。</li>
-    <li>ns-3 验证覆盖了包级物理层和帧内运动，但没有覆盖空口 ACK、控制信道时延和报告丢失、小尺度衰落和多速率；ns-3 只跑了默认和高负载两个场景族。时序仍是同步的。</li>
+    <li>定稿方法只在一个场景族上训练：16 节点、300 m、理想信道、单速率单信道。困难条件、实测参数信道和真实轨迹上的结果都属于零样本泛化；E13 的“重训”版本除外。</li>
+    <li>ns-3 验证覆盖了包级物理层、帧内运动、莱斯衰落（通过私有执行帧）和真实轨迹回放，但没有覆盖空口 ACK、控制信道时延、报告丢失和多速率。时序仍是同步的。</li>
+    <li>信道只有单一速率，衰落裕量对绝对性能影响很大；块衰落按周期抽样。UCSB 实测显示，链路起伏大于 K = 10 dB 的莱斯衰落（E15 正在探索）。真实数据只提供轨迹，业务、信道和收发都由模型补齐。</li>
     <li>环境语义与研究方案第 19 版有两处差异：路由变化后重新安置旧队列；等待区恢复时，若目标队列已满则继续等待。详见 <code>docs/decisions.md</code>。</li>
-    <li>反压基线使用了主方法没有的“每个包发往哪里”的信息，时延比主方法低；节点几乎静止时主方法的交付率略低于 LQ。</li>
-    <li>比较没有做多重校正。测试集已分批用于 E9–E11，之后的方法调整需要新的独立测试种子。</li>
+    <li>反压基线用到了主方法没有的信息（每个包的目的地），时延比主方法低。节点几乎静止或机群紧凑时，零样本主方法的交付率略低于 LQ（E11、E13）。</li>
+    <li>比较没有做多重校正。测试集已分批用于 E9–E15，每轮都换了新的种子偏移。</li>
   </ul>
   <h2>复现</h2>
   <p>全部源码、配置、实验方案和文档都在 GitHub 仓库 <code>NoQuitNoDefeat/paper1-next</code> 中。运行结果单独保存在本机 <code>results/</code>。本页由 <code>tools/build_report.py</code> 从结果文件生成。</p>
@@ -406,8 +551,12 @@ tools/ns3/setup.sh    # 构建 ns-3.48 + ns3-ai + 本项目的 fanet-scheduler �
 .venv/bin/python tools/e10_ns3.py --spec configs/experiments/e10_ns3.json
 .venv/bin/fanet-next train-baseline --config configs/baselines/zhao_gcn.toml --set seed=0 --run-dir results/e11/runs/zhao_gcn-s0
 .venv/bin/python tools/e11_compare.py --spec configs/experiments/e11_compare.json
+.venv/bin/python tools/e11_compare.py --spec configs/experiments/e12b_channel.json
+.venv/bin/python tools/data/build_vasarhelyi.py && .venv/bin/python tools/e13_train.py
+.venv/bin/python tools/e11_compare.py --spec configs/experiments/e13_flock.json
+.venv/bin/python tools/train_runs.py configs/experiments/e13b_train.json configs/experiments/e14_train.json
 .venv/bin/python tools/build_report.py</code></pre>
-  <p class="note">实验记录：<code>docs/experiments.md</code>（E1–E11）；实现决定：<code>docs/decisions.md</code>；已知问题：<code>docs/known-issues.md</code>。</p>
+  <p class="note">实验记录：<code>docs/experiments.md</code>（E1–E15）；数据筛选：<code>docs/data-screening.md</code>；实现决定：<code>docs/decisions.md</code>；已知问题：<code>docs/known-issues.md</code>。</p>
 </section>
 </div>
 
@@ -670,6 +819,59 @@ heat("e11s-table","e11s-buttons",E11.sweeps.diffs,E11_ROWS.filter(n=>E11.sweeps.
     r.insertCell().textContent=x.dr_light.toFixed(4); r.insertCell().textContent=x.dr_ns3.toFixed(4);
     r.insertCell().textContent=x.delay_ns3.toFixed(3); r.insertCell().textContent=(x.per*100).toFixed(2)+"%";
     const c=r.insertCell(); const d=x.diff_delivery_ratio; if(d){ const pp=v2=>(v2*100>0?"+":"")+(v2*100).toFixed(2); c.textContent=pp(d.m); const ci=document.createElement("span"); ci.className="ci"; ci.textContent=`[${pp(d.lo)}, ${pp(d.hi)}]`; c.appendChild(ci);} else c.textContent="–"; }
+})();
+/* ---------- E12b onwards ---------- */
+const NAMES = DATA.names;
+const ROW_ORDER = ["主方法","主方法·重训","主方法·宽","Zhao-GCN","Zhao-GCN·重训","Zhao-GCN·宽","GRLinQ","GRLinQ·重训","GRLinQ·宽",
+  "独立决定PPO","独立决定PPO·重训","独立决定PPO·宽","仅模仿","仅模仿·重训","仅模仿·宽","max_weight_opt","backpressure_opt",
+  "lq_local_search","backpressure","longest_queue","hol_weighted","oldest_hol","spatial_tdma","random"];
+const rowsOf = obj => ROW_ORDER.filter(n=>obj[n]);
+const fpp = v => (v*100>0?"+":"")+(v*100).toFixed(2);
+const fs = v => (v>0?"+":"")+v.toFixed(3);
+function ciCell(c, d, f){ c.textContent=f(d.m); const s=document.createElement("span"); s.className="ci"; s.textContent=`[${f(d.lo)}, ${f(d.hi)}]`; c.appendChild(s); }
+function plainTable(id, headers, rows){
+  const t=document.getElementById(id); if(!t) return; clear(t);
+  const hr=t.createTHead().insertRow(); for(const h of headers){ const c=document.createElement("th"); c.textContent=h; hr.appendChild(c); }
+  const tb=t.createTBody();
+  for(const row of rows){ const r=tb.insertRow(); if(row.main) r.className="main";
+    for(const x of row.cells){ const c=r.insertCell();
+      if(x && x.d){ ciCell(c, x.d, x.f); } else if(x && x.pre!==undefined){ c.textContent=x.pre; const s=document.createElement("span"); s.className="ci"; s.textContent=x.post; c.appendChild(s); }
+      else c.textContent=(x===null||x===undefined)?"–":x; } }
+}
+function effectRows(effect, fams){
+  return rowsOf(effect).concat(Object.keys(effect).filter(n=>!ROW_ORDER.includes(n))).map(n=>({main:n==="主方法",
+    cells:[NAMES[n]||n, ...fams.map(f=>{ const e=effect[n][f]; if(!e) return null;
+      return {pre:`${e.ref.toFixed(3)} → ${e.new.toFixed(3)}`, post:`${fpp(e.delivery_ratio.m)} [${fpp(e.delivery_ratio.lo)}, ${fpp(e.delivery_ratio.hi)}]`}; })]}));
+}
+(function(){
+  const E=DATA.e12b;
+  heat("e12b-table","e12b-buttons",E.versus,rowsOf(E.versus),E.columns,NAMES);
+  plainTable("e12b-effect", ["策略", ...E.families.map(f=>LABEL[f])], effectRows(E.effect, E.families));
+  plainTable("e12b-sens", ["条件","主方法交付率","交付率差（个百分点）","平均时延差（s）","可靠性可接受"],
+    E.sensitivity.map(x=>({cells:[x.label, x.dr_main.toFixed(4), {d:x.delivery_ratio,f:fpp}, {d:x.e2e_delay_mean_s,f:fs}, x.delivery_ratio.lo>=-0.005?"是":"否"]})));
+  const T=DATA.e13;
+  heat("e13-table","e13-buttons",T["主方法"],rowsOf(T["主方法"]),T.columns,NAMES);
+  heat("e13rt-table","e13rt-buttons",T["主方法·重训"],rowsOf(T["主方法·重训"]),T.columns,NAMES);
+  heat("e13x-table","e13x-buttons",T.extra,rowsOf(T.extra),T.extra_columns,NAMES);
+  plainTable("e13-ns3", ["测试飞行","主方法 − LQ · 轻量","主方法 − LQ · ns-3","主方法 ns-3 − 轻量","LQ ns-3 − 轻量"],
+    T.ns3.map(x=>({cells:[LABEL[x.fold]||x.fold, {d:x.lightweight.delivery_ratio,f:fpp}, {d:x.ns3.delivery_ratio,f:fpp},
+      {d:x["fid_主方法"],f:fpp}, {d:x.fid_longest_queue,f:fpp}]})));
+  if(T.ucsb){ const u=T.ucsb[0].models, lab={step:"无衰落门限（阶跃）",rician:"门限 + 莱斯衰落",lognormal:"门限 + 对数正态阴影"};
+    const par=(k,p)=>k==="step"?`距离 ${p.range_m.toFixed(0)} m`:k==="rician"?`指数 ${p.exponent.toFixed(2)}，K ${p.k_db.toFixed(1)} dB`:`指数 ${p.exponent.toFixed(2)}，σ ${p.sigma_db.toFixed(1)} dB`;
+    plainTable("e13-ucsb", ["链路模型","检验集逐包对数似然","分段收包率平均误差","拟合参数"],
+      Object.entries(u).map(([k,v])=>({main:k==="rician", cells:[lab[k]||k, v.test_loglik.toFixed(3), v.test_sector_mae.toFixed(3), par(k,v.params)]}))); }
+  if(DATA.e14){ const X=DATA.e14; document.getElementById("e14-wrap").hidden=false;
+    heat("e14-table","e14-buttons",X["主方法·宽"],rowsOf(X["主方法·宽"]),X.columns,NAMES);
+    heat("e14b-table","e14b-buttons",X.broad_vs_orig,rowsOf(X.broad_vs_orig),X.columns,NAMES); }
+  if(DATA.e15){ const Y=DATA.e15; document.getElementById("e15-wrap").hidden=false;
+    heat("e15-table","e15-buttons",Y.versus,rowsOf(Y.versus),Y.columns,NAMES);
+    plainTable("e15-effect", ["策略", ...Y.families.map(f=>f==="flock"?"群集 30（合并）":LABEL[f])], effectRows(Y.effect, Y.families));
+    plainTable("e15-sigma", ["条件","主方法交付率","LQ 交付率","主方法 − LQ 交付率（个百分点）","平均时延差（s）"],
+      Y.sigma.map(x=>({cells:[x.label, x.dr_main.toFixed(4), x.dr_lq.toFixed(4), {d:x.delivery_ratio,f:fpp}, {d:x.e2e_delay_mean_s,f:fs}]})));
+    if(Y.ns3){ const w=document.getElementById("e15-ns3-wrap"); const h=document.createElement("h3"); h.textContent="ns-3 复核（C2S5 默认场景族）"; w.appendChild(h);
+      const tw=document.createElement("div"); tw.className="table-wrap"; const tt=document.createElement("table"); tt.id="e15-ns3"; tw.appendChild(tt); w.appendChild(tw);
+      plainTable("e15-ns3", ["主方法 − LQ · 轻量","主方法 − LQ · ns-3","主方法 ns-3 − 轻量","LQ ns-3 − 轻量"],
+        [{cells:[{d:Y.ns3.lightweight.delivery_ratio,f:fpp},{d:Y.ns3.ns3.delivery_ratio,f:fpp},{d:Y.ns3["fid_主方法"],f:fpp},{d:Y.ns3.fid_longest_queue,f:fpp}]}]); } }
 })();
 let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(drawAll,120); }).observe(document.querySelector(".page"));
 </script>
