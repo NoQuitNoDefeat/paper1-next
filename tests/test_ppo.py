@@ -105,3 +105,47 @@ def test_imitation_records_replay_and_fit_raises_teacher_likelihood():
     fit(model, recs, epochs=15, minibatch=64, lr=3e-3)
     after = replay(model, [r.micro for r in recs]).logp.sum().item()
     assert after > before
+
+
+def test_sequence_ratio_update_runs_and_starts_at_ratio_one():
+    model, _, _, res = collect()
+    for s in res.streams:
+        compute_stream_advantages(s, 0.99, 0.95, credit="cycle")
+    ppo = PPO(model, epochs=1, minibatch_cycles=10_000, seed=0, ratio="sequence")
+    stats = ppo.update(res.records)
+    assert stats["approx_kl"] == pytest.approx(0.0, abs=1e-6) and stats["clip_frac"] == 0.0
+    with pytest.raises(ValueError):
+        PPO(model, ratio="joint")
+
+
+def test_critic_without_a_plan_summary_cannot_tell_equal_size_complete_plans_apart():
+    """Final method (set_summary none): at a complete plan the critic sees only the cycle
+    encoding and the number of chosen links; with critic_set_summary it sees the links."""
+    from dataclasses import replace
+    from fanet_next.config import deep_merge
+    from fanet_next.model.runner import replay as rp_
+    blind = deep_merge(CFG, {"model": {"set_summary": {"type": "none"}}})
+    sees = deep_merge(blind, {"model": {"critic_set_summary": {"type": "gated_mean"}}})
+    for cfg, expect_equal in ((blind, True), (sees, False)):
+        torch.manual_seed(1)
+        model = build_model(cfg, feature_schema(cfg))
+        policy = build_policy(cfg, "ppo", model=model, seed=0)
+        envs = [build_env(cfg, run_id="t0")]
+        col = RolloutCollector(envs, policy, seeds=SeedStream(7), scaler=ReturnScaler(1, 0.99),
+                               rollout_cycles=30)
+        res = col.collect()
+        # a cycle where a different single first choice also completes a one-link plan is rare;
+        # compare two complete one-link plans built from the first record with >= 2 candidates
+        rec = next(r for r in res.records if r.num_actions >= 1 and r.micro.masks[0].sum() >= 2)
+        first = int(rec.micro.actions[0])
+        other = int(np.flatnonzero(rec.micro.masks[0])[np.flatnonzero(rec.micro.masks[0]) != first][0])
+        empty = np.zeros_like(rec.micro.masks[0])
+        def plan(a):
+            m = rec.micro
+            return replace(m, actions=np.array([a]), masks=np.stack([m.masks[0], empty]),
+                           micro=np.stack([m.micro[0], m.micro[-1]]), logp=m.logp[:1],
+                           values=m.values[[0, -1]],
+                           cand_dyn=None if m.cand_dyn is None else m.cand_dyn[[0, -1]])
+        v = rp_(model, [plan(first), plan(other)]).values
+        same = torch.isclose(v[0, 1], v[1, 1], atol=1e-6).item()
+        assert same == expect_equal

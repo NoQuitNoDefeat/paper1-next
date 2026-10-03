@@ -59,3 +59,21 @@ def test_micro_step_count_does_not_change_physical_discount():
 def test_stream_must_end_with_a_bootstrap_marker():
     with pytest.raises(ValueError):
         compute_stream_advantages([rec([1.0], 0.0, "continue")], G, LAM)
+
+
+def test_cycle_credit_gives_every_micro_action_the_cycle_level_advantage():
+    """credit = "cycle": GAE over cycle-start values only; value targets unchanged."""
+    v0, v1, w0, b = 1.0, 2.0, 0.5, 3.0
+    r1, r2 = 0.3, -0.2
+    step = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    cyc = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    compute_stream_advantages(step, G, LAM)
+    compute_stream_advantages(cyc, G, LAM, credit="cycle")
+    a2 = r2 + G * b - w0
+    a1 = r1 + G * w0 - v0 + G * LAM * a2  # within-cycle value step v1 - v0 does not enter
+    assert cyc[0].advantages == pytest.approx([a1, a1], rel=1e-6)
+    assert cyc[1].advantages == pytest.approx([a2], rel=1e-6)
+    for s_, c_ in zip(step, cyc):
+        assert np.array_equal(s_.returns, c_.returns)
+    with pytest.raises(ValueError):
+        compute_stream_advantages(cyc, G, LAM, credit="other")

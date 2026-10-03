@@ -1,0 +1,11 @@
+# E17 臂 A2（探索，2026-10-03，不替代定稿配置）：序列级 PPO。
+# 每个周期一个概率比：按选择顺序选出这些链路的概率之比（各步相乘），整体裁剪，
+# 配周期级优势。注意这是“有序选择序列”的概率，不是无序链路集合的概率。其余与定稿方法相同。
+extends = "../protocol_final.toml"
+name = "e17-sequence-ppo"
+
+[training]
+credit = "cycle"
+
+[trainer]
+ratio = "sequence"

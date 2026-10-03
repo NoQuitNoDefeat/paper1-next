@@ -83,12 +83,18 @@ class DualGraphModel(SchedulingModel):
     ``share_trunk`` (default) shares the encoder trunk between actor and critic.
     ``candidate_dynamics=True`` adds a projection of the controller's per-candidate
     micro-state features to every candidate embedding at every micro step.
+    ``critic_set_summary`` gives the critic its own selected-set summary of the chosen
+    links' (critic) embeddings while the actor keeps ``set_summary``: the critic can then
+    tell apart partial plans that leave the same remaining set (E17 arm C).  Without it,
+    at a complete plan (no feasible candidate left) the critic sees only the cycle encoding
+    and the number of chosen links.
     """
 
     def __init__(self, schema: FeatureSchema, hidden: int = 64, share_trunk: bool = True,
                  candidate_dynamics: bool = False,
                  comm_encoder: dict | str = "mpnn", lift: dict | str = "concat",
                  interaction_encoder: dict | str = "mpnn", set_summary: dict | str = "gated_sum",
+                 critic_set_summary: dict | str | None = None,
                  actor_head: dict | str = "mlp", critic_head: dict | str = "mlp"):
         super().__init__()
         self.schema = schema
@@ -97,12 +103,15 @@ class DualGraphModel(SchedulingModel):
         self.critic_trunk = (self.actor_trunk if share_trunk
                              else Trunk(schema, hidden, comm_encoder, lift, interaction_encoder))
         self.summary_a = SET_SUMMARY.build(set_summary, hidden=hidden)
-        self.summary_c = (self.summary_a if share_trunk
-                          else SET_SUMMARY.build(set_summary, hidden=hidden))
-        sd = self.summary_a.out_dim
-        self.actor = ACTOR_HEAD.build(actor_head, link_dim=hidden, state_dim=sd, ctx_dim=hidden)
-        self.critic = CRITIC_HEAD.build(critic_head, link_dim=hidden, state_dim=sd, ctx_dim=hidden,
-                                        micro_dim=MICRO_FEATURE_DIM)
+        # the critic's summary is a separate module when the trunks are separate or when the
+        # critic has a summary of its own; otherwise it is the actor's
+        self.separate_summary = critic_set_summary is not None or not share_trunk
+        self.summary_c = (self.summary_a if not self.separate_summary else
+                          SET_SUMMARY.build(critic_set_summary or set_summary, hidden=hidden))
+        self.actor = ACTOR_HEAD.build(actor_head, link_dim=hidden, state_dim=self.summary_a.out_dim,
+                                      ctx_dim=hidden)
+        self.critic = CRITIC_HEAD.build(critic_head, link_dim=hidden, state_dim=self.summary_c.out_dim,
+                                        ctx_dim=hidden, micro_dim=MICRO_FEATURE_DIM)
         self.dyn_actor = nn.Linear(CANDIDATE_FEATURE_DIM, hidden) if candidate_dynamics else None
         self.dyn_critic = (None if not candidate_dynamics else
                            self.dyn_actor if share_trunk else nn.Linear(CANDIDATE_FEATURE_DIM, hidden))
@@ -115,13 +124,13 @@ class DualGraphModel(SchedulingModel):
     def init_state(self, enc: Encoding):
         b = enc.ctx_actor.shape[0]
         sa = self.summary_a.init(b, enc.ctx_actor)
-        return (sa, sa) if self.share_trunk else (sa, self.summary_c.init(b, enc.ctx_critic))
+        return (sa, self.summary_c.init(b, enc.ctx_critic)) if self.separate_summary else (sa, sa)
 
     def update_state(self, enc: Encoding, state, chosen, active):
         rows = torch.arange(len(chosen), device=chosen.device)
         idx = chosen.clamp(min=0)
         sa = self.summary_a.update(state[0], enc.z_actor[rows, idx], active)
-        if self.share_trunk:
+        if not self.separate_summary:
             return (sa, sa)
         return (sa, self.summary_c.update(state[1], enc.z_critic[rows, idx], active))
 

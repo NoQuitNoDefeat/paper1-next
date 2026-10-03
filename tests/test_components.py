@@ -88,7 +88,7 @@ VARIANTS = ([("comm_encoder", n) for n in COMM_ENCODER.names()]
             + [("lift", n) for n in LIFT.names()]
             + [("interaction_encoder", n) for n in INTERACTION_ENCODER.names()]
             + [("set_summary", n) for n in SET_SUMMARY.names()]
-            + [("share_trunk", False), ("candidate_dynamics", True)])
+            + [("share_trunk", False), ("candidate_dynamics", True), ("critic_set_summary", "gated_mean")])
 
 
 @pytest.mark.parametrize("key,value", VARIANTS)

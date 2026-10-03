@@ -14,6 +14,7 @@ import torch
 
 from ..config import dump_json
 from ..policy.learned import LearnedPolicy
+from ..registry import ConfigError
 from ..reward.metrics import merge_summaries
 from ..training.advantages import compute_stream_advantages
 from ..training.checkpoint import load_checkpoint, rng_state, save_checkpoint, set_rng_state
@@ -27,7 +28,8 @@ from .evaluate import evaluate
 TRAINING_DEFAULTS = dict(
     iterations=200, num_envs=8, rollout_cycles=128, gamma=0.99, gae_lambda=0.95,
     reward_norm=True, lr=3e-4, lr_final=None, eval_every=10, eval_episodes=8,
-    checkpoint_every=10, keep_every=50, threads=1, device="cpu", eval_drain_cycles=0)
+    checkpoint_every=10, keep_every=50, threads=1, device="cpu", eval_drain_cycles=0,
+    credit="step")  # "cycle": one advantage per cycle for all its micro actions (E17)
 
 
 def seed_everything(seed: int) -> None:
@@ -56,6 +58,8 @@ class TrainingRun:
             scaler=self.scaler, rollout_cycles=int(t["rollout_cycles"]))
         trainer_spec = dict(cfg.get("trainer", {"type": "ppo"}))
         trainer_spec.setdefault("type", "ppo")
+        if trainer_spec.get("ratio") == "sequence" and t["credit"] != "cycle":
+            raise ConfigError("trainer.ratio = 'sequence' needs training.credit = 'cycle'")
         trainer_spec.setdefault("lr", t["lr"])
         self.trainer = TRAINER.build(trainer_spec, model=self.model, seed=self.seed + 200_000,
                                      device=t["device"])
@@ -137,7 +141,7 @@ class TrainingRun:
             self.trainer.set_lr(self._lr(it, total))
             res = self.collector.collect()
             for stream in res.streams:
-                compute_stream_advantages(stream, t["gamma"], t["gae_lambda"])
+                compute_stream_advantages(stream, t["gamma"], t["gae_lambda"], credit=t["credit"])
             records = res.records
             t1 = time.perf_counter()
             stats = self.trainer.update(records)

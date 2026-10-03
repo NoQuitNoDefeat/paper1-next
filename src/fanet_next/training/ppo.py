@@ -33,8 +33,15 @@ class PPO:
     def __init__(self, model: SchedulingModel, *, lr: float = 3e-4, clip: float = 0.2,
                  epochs: int = 4, minibatch_cycles: int = 256, ent_coef: float = 0.01,
                  vf_coef: float = 0.5, max_grad_norm: float = 0.5, value_clip: float | None = None,
-                 target_kl: float | None = None, adv_norm: bool = True, seed: int = 0,
-                 device: str = "cpu"):
+                 target_kl: float | None = None, adv_norm: bool = True, ratio: str = "step",
+                 seed: int = 0, device: str = "cpu"):
+        if ratio not in ("step", "sequence"):
+            raise ValueError(f"unknown ratio {ratio!r}")
+        # "step": one probability ratio and clip per micro action (the method's default);
+        # "sequence": one ratio per cycle, the product over the ordered selections (the
+        # probability of choosing these links in this order), clipped as a whole and paired
+        # with the cycle's first advantage - use with cycle-level credit (E17 arm A2)
+        self.ratio = ratio
         self.model = model
         self.clip, self.epochs, self.mb = clip, epochs, minibatch_cycles
         self.ent_coef, self.vf_coef, self.max_grad_norm = ent_coef, vf_coef, max_grad_norm
@@ -85,10 +92,20 @@ class PPO:
         n_act = am.sum().clamp(min=1)
 
         log_ratio = torch.where(am, rp.logp - old_logp, torch.zeros_like(old_logp))
-        ratio = log_ratio.exp()
-        surr = torch.min(ratio * adv, ratio.clamp(1 - self.clip, 1 + self.clip) * adv)
-        policy_loss = -(surr * am).sum() / n_act
-        entropy = (rp.entropy * am).sum() / n_act
+        if self.ratio == "sequence":
+            has = am.any(1)
+            log_ratio = log_ratio.sum(1, keepdim=True)  # (B, 1): ordered-sequence log ratio
+            ratio = log_ratio.exp()
+            a = adv[:, :1]
+            surr = torch.min(ratio * a, ratio.clamp(1 - self.clip, 1 + self.clip) * a)
+            am = has.unsqueeze(1)
+            n_act = am.sum().clamp(min=1)
+            policy_loss = -(surr * am).sum() / n_act
+        else:
+            ratio = log_ratio.exp()
+            surr = torch.min(ratio * adv, ratio.clamp(1 - self.clip, 1 + self.clip) * adv)
+            policy_loss = -(surr * am).sum() / n_act
+        entropy = (rp.entropy * rp.act_mask).sum() / rp.act_mask.sum().clamp(min=1)
 
         v = rp.values
         v_err = (v - ret) ** 2
