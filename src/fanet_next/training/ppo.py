@@ -98,9 +98,11 @@ class PPO:
             ratio = log_ratio.exp()
             a = adv[:, :1]
             surr = torch.min(ratio * a, ratio.clamp(1 - self.clip, 1 + self.clip) * a)
-            am = has.unsqueeze(1)
-            n_act = am.sum().clamp(min=1)
-            policy_loss = -(surr * am).sum() / n_act
+            # divided by the number of actions, as in step mode: at ratio 1 the gradient equals
+            # the step-mode gradient with a shared advantage, so the two differ only in clipping
+            # (not in the actor's update strength relative to the critic's)
+            policy_loss = -(surr * has.unsqueeze(1)).sum() / n_act
+            am = has.unsqueeze(1)  # statistics below: one ratio per cycle
         else:
             ratio = log_ratio.exp()
             surr = torch.min(ratio * adv, ratio.clamp(1 - self.clip, 1 + self.clip) * adv)

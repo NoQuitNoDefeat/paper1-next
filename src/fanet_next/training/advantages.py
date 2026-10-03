@@ -91,17 +91,30 @@ def compute_stream_advantages(records: list[CycleRecord], gamma: float, lam: flo
                               credit: str = "step") -> None:
     """Fill ``advantages`` and ``returns`` (= A + V_old) of every record in place.
 
-    ``credit = "step"``: micro-step GAE (the method's default).  ``credit = "cycle"``: every
-    micro action of a cycle gets the cycle-level advantage (``cycle_advantages``), so the
-    critic's within-cycle value changes do not enter the policy update (E17 arm A); the
-    value targets (``returns``) stay the micro-step lambda-returns either way."""
-    if credit not in ("step", "cycle"):
+    ``credit = "step"``: micro-step GAE (the method's default).
+    ``credit = "flat"``: the same micro-step GAE (lambda per micro transition, unchanged) with
+    every value inside a cycle replaced by the cycle-start value, so the critic's within-cycle
+    value changes do not enter the advantages and nothing else changes (E17 arm A1').
+    ``credit = "cycle"``: one advantage per cycle from ``cycle_advantages`` for all its micro
+    actions; this also moves lambda from once per micro transition to once per cycle (E17 A1).
+    The value targets (``returns``) stay the micro-step lambda-returns in every mode."""
+    if credit not in ("step", "flat", "cycle"):
         raise ValueError(f"unknown credit {credit!r}")
     if not records:
         return
     r, v, nv, g, b, c = flatten_stream(records, gamma)
     adv = gae(r, v, nv, g, b, c, lam)
     ret = adv + np.asarray(v)
+    if credit == "flat":
+        vf, nvf = np.asarray(v, dtype=np.float64).copy(), np.asarray(nv, dtype=np.float64).copy()
+        pos = 0
+        for rec in records:
+            k = rec.num_actions
+            v0 = float(rec.micro.values[0])
+            vf[pos:pos + k + 1] = v0  # micro states and the complete-plan state
+            nvf[pos:pos + k] = v0  # successors inside the cycle; the boundary successor stays
+            pos += k + 1
+        adv = gae(r, vf, nvf, g, b, c, lam)
     per_cycle = cycle_advantages(records, gamma, lam) if credit == "cycle" else None
     pos = 0
     for i, rec in enumerate(records):

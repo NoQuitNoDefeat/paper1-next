@@ -29,7 +29,7 @@ TRAINING_DEFAULTS = dict(
     iterations=200, num_envs=8, rollout_cycles=128, gamma=0.99, gae_lambda=0.95,
     reward_norm=True, lr=3e-4, lr_final=None, eval_every=10, eval_episodes=8,
     checkpoint_every=10, keep_every=50, threads=1, device="cpu", eval_drain_cycles=0,
-    credit="step")  # "cycle": one advantage per cycle for all its micro actions (E17)
+    credit="step")  # "flat" / "cycle": see training.advantages.compute_stream_advantages (E17)
 
 
 def seed_everything(seed: int) -> None:

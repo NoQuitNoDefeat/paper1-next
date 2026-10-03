@@ -77,3 +77,19 @@ def test_cycle_credit_gives_every_micro_action_the_cycle_level_advantage():
         assert np.array_equal(s_.returns, c_.returns)
     with pytest.raises(ValueError):
         compute_stream_advantages(cyc, G, LAM, credit="other")
+
+
+def test_flat_credit_removes_within_cycle_value_changes_and_keeps_lambda_per_micro_step():
+    v0, v1, w0, b = 1.0, 2.0, 0.5, 3.0
+    r1, r2 = 0.3, -0.2
+    flat = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    compute_stream_advantages(flat, G, LAM, credit="flat")
+    a2 = r2 + G * b - w0
+    d1 = r1 + G * w0 - v0  # complete-plan value v1 replaced by the cycle-start value v0
+    a1 = d1 + G * LAM * a2
+    a0 = 0.0 + LAM * a1  # micro step: value change v1 - v0 removed, lambda still per micro step
+    assert flat[0].advantages == pytest.approx([a0, a1], rel=1e-6)
+    assert flat[1].advantages == pytest.approx([a2], rel=1e-6)
+    step = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    compute_stream_advantages(step, G, LAM)
+    assert np.array_equal(flat[0].returns, step[0].returns)

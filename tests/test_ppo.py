@@ -149,3 +149,17 @@ def test_critic_without_a_plan_summary_cannot_tell_equal_size_complete_plans_apa
         v = rp_(model, [plan(first), plan(other)]).values
         same = torch.isclose(v[0, 1], v[1, 1], atol=1e-6).item()
         assert same == expect_equal
+
+
+def test_sequence_and_step_ratio_give_the_same_first_gradient_with_a_shared_advantage():
+    """At ratio 1 (first step) the two modes differ only in clipping: same actor gradient."""
+    grads = []
+    for mode in ("step", "sequence"):
+        model, _, _, res = collect(seed=3)
+        for s in res.streams:
+            compute_stream_advantages(s, 0.99, 0.95, credit="cycle")
+        ppo = PPO(model, epochs=1, minibatch_cycles=10_000, seed=0, ratio=mode, vf_coef=0.0, ent_coef=0.0)
+        ppo.optimizer = torch.optim.SGD(model.parameters(), lr=0.0)  # gradients only
+        ppo.update(res.records)
+        grads.append(torch.cat([p.grad.flatten() for p in model.parameters() if p.grad is not None]))
+    assert torch.allclose(grads[0], grads[1], atol=1e-6, rtol=1e-4)

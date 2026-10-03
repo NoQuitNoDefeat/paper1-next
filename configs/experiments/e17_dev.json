@@ -1,5 +1,5 @@
 {
- "name": "E17 开发集比较：C、A1、A2 与定稿方法（开发种子 16–47，排空 1000）",
+ "name": "E17 开发集比较：C、A1′、A1、A2 与定稿方法（开发种子 16–47，排空 1000）",
  "out": "results/e17/dev",
  "main": "主方法",
  "eval": {
@@ -36,6 +36,11 @@
    "results/e17/runs/critic_plan-s0",
    "results/e17/runs/critic_plan-s1",
    "results/e17/runs/critic_plan-s2"
+  ],
+  "A1′·周期内估值拉平": [
+   "results/e17/runs/flat_values-s0",
+   "results/e17/runs/flat_values-s1",
+   "results/e17/runs/flat_values-s2"
   ],
   "A1·周期级优势": [
    "results/e17/runs/cycle_credit-s0",

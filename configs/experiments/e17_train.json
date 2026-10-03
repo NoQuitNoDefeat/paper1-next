@@ -1,5 +1,5 @@
 {
- "name": "E17 评论者与功劳分配：C（评论者看见计划）、A1（周期级优势）、A2（序列级 PPO）",
+ "name": "E17 评论者与功劳分配：C、A1′（周期内估值拉平）、A1（周期级优势）、A2（序列级 PPO）",
  "runs": "results/e17/runs/{kind}-s{seed}",
  "scenarios": {
   "base": {}
@@ -49,6 +49,21 @@
    "cost": 1.0,
    "mem_gb": 1.6,
    "priority": 0
+  },
+  "flat_values": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e17_flat_values.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.0,
+   "mem_gb": 1.6,
+   "priority": 1
   }
  }
 }
