@@ -31,7 +31,11 @@ SCEN_LABEL = {"default": "默认", "nodes24_dense": "24 节点·更密", "nodes2
               "rpgm": "BonnMotion RPGM", "gauss_markov": "BonnMotion 高斯-马尔可夫",
               "n30": "30 架", "ideal": "理想信道", "r161": "单跳 161 m",
               "slow_compact": "低速紧凑", "nodes30_dense": "30 节点·更密",
-              "flock16": "群集 30 · 16 架（合并）", "flock30": "群集 30 · 30 架（合并）"}
+              "flock16": "群集 30 · 16 架（合并）", "flock30": "群集 30 · 30 架（合并）",
+              "c2s5u_default": "C2S5U · 默认", "c2s5u_load_5_15": "C2S5U · 负载 5–15",
+              "c2s5u_nodes24_same_density": "C2S5U · 24 节点", "flock_c2s5u": "群集 30 · C2S5U",
+              "verdoucq": "Verdoucq（四次飞行合并）", "fig4": "Verdoucq 图 4", "fig5": "Verdoucq 图 5",
+              "fig6": "Verdoucq 图 6", "fig7": "Verdoucq 图 7"}
 BASELINE_LABEL = {"max_weight_opt": "精确最大权（MILP）", "backpressure_opt": "精确反压（MILP）",
                   "longest_queue": "longest_queue", "hol_weighted": "hol_weighted", "oldest_hol": "oldest_hol",
                   "backpressure": "反压（贪心）", "lq_local_search": "LQ + 局部搜索",
@@ -42,7 +46,8 @@ BASELINE_LABEL = {"max_weight_opt": "精确最大权（MILP）", "backpressure_o
                   "GRLinQ·重训": "GRLinQ 式 · 重训", "独立决定PPO·重训": "独立决定 PPO · 重训",
                   "仅模仿·重训": "仅模仿 · 重训", "主方法·宽": "定稿方法 · 宽分布",
                   "Zhao-GCN·宽": "Zhao 等 GCN · 宽分布", "GRLinQ·宽": "GRLinQ 式 · 宽分布",
-                  "独立决定PPO·宽": "独立决定 PPO · 宽分布", "仅模仿·宽": "仅模仿 · 宽分布"}
+                  "独立决定PPO·宽": "独立决定 PPO · 宽分布", "仅模仿·宽": "仅模仿 · 宽分布",
+                  "主方法·群集重训": "定稿方法 · 群集 30 重训", "Zhao-GCN·群集重训": "Zhao 等 GCN · 群集 30 重训"}
 KEYS3 = ("delivery_ratio", "e2e_delay_mean_s", "e2e_delay_p95_s")
 METRICS = ["delivery_ratio", "termination_ratio", "e2e_delay_mean_s", "e2e_delay_p95_s", "ontime_2s"]
 
@@ -414,23 +419,25 @@ def e14() -> dict | None:
     return out
 
 
-def e15() -> dict | None:
-    """Exploration: 5 dB known shadowing as a controlled variable (None until complete)."""
+def _shadow_exp(prefix: str, sh: str, sigma_rows: list[tuple[str, str, str, bool]]) -> dict | None:
+    """E15 / E15b: shadowed condition ``sh`` vs C2 on the same scenes (None until complete)."""
     from e10_ns3 import policies
 
-    ch, fl = _load_spec("configs/experiments/e15_channel.json"), _load_spec("configs/experiments/e15_flock.json")
-    sg, ns3 = _load_spec("configs/experiments/e15_sigma.json"), _load_spec("configs/experiments/e15_ns3.json")
+    ch, fl = _load_spec(f"configs/experiments/{prefix}_channel.json"), _load_spec(f"configs/experiments/{prefix}_flock.json")
+    sg = _load_spec(f"configs/experiments/{prefix}_sigma.json")
+    ns3_file = ROOT / f"configs/experiments/{prefix}_ns3.json"
+    ns3 = _load_spec(f"configs/experiments/{prefix}_ns3.json") if ns3_file.exists() else None
     if not all(_complete(s) for s in (ch, fl, sg)):
         return None
     fams = ["default", "load_5_15", "nodes24_same_density"]
-    folds = sorted({s.split("_", 1)[1] for s in fl["scenarios"]})
-    groups = [*((f, ch, [f"c2_{f}"], [f"c2s5_{f}"]) for f in fams),
-              ("flock", fl, [f"c2_{f}" for f in folds], [f"c2s5_{f}" for f in folds])]
-    out = {"families": [g[0] for g in groups], "columns": [f"c2s5_{f}" if f != "flock" else "flock_c2s5"
+    folds = sorted({s.split("_", 1)[1] for s in fl["scenarios"] if s.startswith("c2_")})
+    groups = [*((f, ch, [f"c2_{f}"], [f"{sh}_{f}"]) for f in fams),
+              ("flock", fl, [f"c2_{f}" for f in folds], [f"{sh}_{f}" for f in folds])]
+    out = {"families": [g[0] for g in groups], "columns": [f"{sh}_{f}" if f != "flock" else f"flock_{sh}"
                                                              for f, *_ in groups],
-           "versus": {}, "effect": {}, "did": {}}
+           "versus": {}, "effect": {}, "did": {}, "shadow": sh}
     for fam, sp, s2, s5 in groups:
-        col = "flock_c2s5" if fam == "flock" else f"c2s5_{fam}"
+        col = f"flock_{sh}" if fam == "flock" else f"{sh}_{fam}"
         for n, d in _versus(sp, {col: s5}, "主方法", list(policies(sp))).items():
             out["versus"].setdefault(n, {}).update(d)
         for n, row in _effect(sp, list(policies(sp)), s5, s2).items():
@@ -441,20 +448,21 @@ def e15() -> dict | None:
         out["did"][fam] = {"m": m, "lo": lo, "hi": hi}
     seeds = _first_seeds(ch, "c2_default", sg["eval"]["episodes"])
     sigma = []
-    for label, sp, scen, sd in [("无阴影（C2）", ch, "c2_default", seeds), ("σ = 3 dB", sg, "c2s3_default", None),
-                                ("σ = 5 dB", ch, "c2s5_default", seeds), ("σ = 7 dB", sg, "c2s7_default", None),
-                                ("σ = 5 dB 且 K = 5 dB", sg, "c2s5k5_default", None)]:
+    for label, which, scen, first in sigma_rows:
+        sp = ch if which == "channel" else sg
+        sd = seeds if first else None
         d = _cmp(sp, [scen], "主方法", "longest_queue", ("delivery_ratio", "e2e_delay_mean_s"), sd)
         sigma.append({"label": label, "dr_main": _mean(sp, [scen], "主方法", "delivery_ratio", sd),
                       "dr_lq": _mean(sp, [scen], "longest_queue", "delivery_ratio", sd), **d})
     out["sigma"] = sigma
     out["ns3"] = None
-    if _complete(ns3):
-        row = {x: _cmp(ns3, ["c2s5_default"], "主方法", "longest_queue", ("delivery_ratio", "e2e_delay_mean_s"),
+    if ns3 is not None and _complete(ns3):
+        scen = next(iter(ns3["scenarios"]))
+        row = {x: _cmp(ns3, [scen], "主方法", "longest_queue", ("delivery_ratio", "e2e_delay_mean_s"),
                        executor=x) for x in ns3["executors"]}
         for n in policies(ns3):
-            a = _per_scene(ns3, ["c2s5_default"], n, "delivery_ratio", executor="ns3")
-            b = _per_scene(ns3, ["c2s5_default"], n, "delivery_ratio", executor="lightweight")
+            a = _per_scene(ns3, [scen], n, "delivery_ratio", executor="ns3")
+            b = _per_scene(ns3, [scen], n, "delivery_ratio", executor="lightweight")
             m, lo, hi = ci(a - b)
             row[f"fid_{n}"] = {"m": m, "lo": lo, "hi": hi}
         out["ns3"] = row
@@ -463,10 +471,44 @@ def e15() -> dict | None:
     return out
 
 
+def e15() -> dict | None:
+    """Exploration: 5 dB known shadowing (zero dB mean) as a controlled variable."""
+    return _shadow_exp("e15", "c2s5", [("无阴影（C2）", "channel", "c2_default", True),
+                                       ("σ = 3 dB", "sigma", "c2s3_default", False),
+                                       ("σ = 5 dB", "channel", "c2s5_default", True),
+                                       ("σ = 7 dB", "sigma", "c2s7_default", False),
+                                       ("σ = 5 dB 且 K = 5 dB", "sigma", "c2s5k5_default", False)])
+
+
+def e15b() -> dict | None:
+    """Exploration: the same shadowing with unit linear mean (power-normalised)."""
+    return _shadow_exp("e15b", "c2s5u", [("无阴影（C2）", "channel", "c2_default", True),
+                                         ("σ = 3 dB（功率归一）", "sigma", "c2s3u_default", False),
+                                         ("σ = 5 dB（功率归一）", "channel", "c2s5u_default", True),
+                                         ("σ = 7 dB（功率归一）", "sigma", "c2s7u_default", False),
+                                         ("σ = 5 dB（dB 零均值，E15）", "channel", "c2s5_default", True)])
+
+
+def e16() -> dict | None:
+    """Confirmation on the Verdoucq swarm: main and broad main vs every policy (None until complete)."""
+    from e10_ns3 import policies
+
+    sp = _load_spec("configs/experiments/e16_verdoucq.json")
+    if not _complete(sp):
+        return None
+    flights = list(sp["scenarios"])
+    cols = {"verdoucq": flights, **{f: [f] for f in flights}}
+    out = {"columns": list(cols)}
+    for main in ("主方法", "主方法·宽"):
+        out[main] = _versus(sp, cols, main, list(policies(sp)))
+    out["means"] = {n: _mean(sp, flights, n, "delivery_ratio") for n in policies(sp)}
+    return out
+
+
 def collect() -> dict:
     return {"e9": e9(), "e10": e10(), "e11": e11(), "curves": curves(), "ablations": ablations(),
             "e8": summary_redesign(), "dev": dev_history(), "e12b": e12b(), "e13": e13(), "e14": e14(),
-            "e15": e15(), "labels": SCEN_LABEL, "names": BASELINE_LABEL}
+            "e15": e15(), "e15b": e15b(), "e16": e16(), "labels": SCEN_LABEL, "names": BASELINE_LABEL}
 
 
 if __name__ == "__main__":

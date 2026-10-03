@@ -140,8 +140,31 @@ def main() -> None:
             "e15_n24": fmt_pp(lq["c2s5_nodes24_same_density"]["delivery_ratio"]["m"]),
             "e15_flock": fmt_pp(lq["flock_c2s5"]["delivery_ratio"]["m"]),
         })
+    if d["e15b"]:
+        lq = d["e15b"]["versus"]["longest_queue"]
+        ok = sum(c["delivery_ratio"]["lo"] >= -0.005 for c in lq.values())
+        facts.update({"e15b_ok": "全部" if ok == len(lq) else f"{ok} 处", "e15b_n": len(lq),
+                      "e15b_n24": fmt_pp(lq["c2s5u_nodes24_same_density"]["delivery_ratio"]["m"]),
+                      "e15b_default": fmt_pp(lq["c2s5u_default"]["delivery_ratio"]["m"]),
+                      "e15b_flock": fmt_pp(lq["flock_c2s5u"]["delivery_ratio"]["m"])})
+    if d["e16"]:
+        z = d["e16"]
+        m, b = z["主方法"]["longest_queue"]["verdoucq"], z["主方法·宽"]["longest_queue"]["verdoucq"]
+        bvo = z["主方法·宽"]["主方法"]["verdoucq"]
+        checks = [m["delivery_ratio"]["lo"] >= -0.005, b["delivery_ratio"]["lo"] >= -0.005,
+                  bvo["delivery_ratio"]["lo"] >= -0.005]
+        facts.update({
+            "e16_main": fmt_pp(m["delivery_ratio"]["m"]), "e16_main_lo": fmt_pp(m["delivery_ratio"]["lo"]),
+            "e16_main_delay": f"{m['e2e_delay_mean_s']['m']:+.2f}",
+            "e16_broad": fmt_pp(b["delivery_ratio"]["m"]), "e16_broad_lo": fmt_pp(b["delivery_ratio"]["lo"]),
+            "e16_bvo": fmt_pp(bvo["delivery_ratio"]["m"]), "e16_bvo_lo": fmt_pp(bvo["delivery_ratio"]["lo"]),
+            "e16_verdict": "三项确认判定全部成立" if all(checks) else f"三项确认判定中 {sum(checks)} 项成立",
+        })
+    facts.update({"e15b_tag": "完成" if d["e15b"] else "进行中", "e16_tag": "完成" if d["e16"] else "进行中"})
     html = TEMPLATE.replace("    <!--E14-->", E14_CLAIM if d["e14"] else "")
     html = html.replace("    <!--E15-->", E15_CLAIM if d["e15"] else "")
+    html = html.replace("    <!--E15B-->", E15B_CLAIM if d["e15b"] else "")
+    html = html.replace("    <!--E16-->", E16_CLAIM if d["e16"] else "")
     for k, v in facts.items():
         html = html.replace("{{" + k + "}}", str(v))
     html = html.replace("/*DATA*/null", json.dumps(d, ensure_ascii=False))
@@ -152,6 +175,9 @@ def main() -> None:
 
 E14_CLAIM = """    <li><strong>探索一：训练分布覆盖低速和紧凑机群（E14）。</strong>用“原分布加低速紧凑分布”的混合分布重新训练后，在群集 30 架上，主方法相对 LQ 的交付率差从 {{e14_f30_orig}} 变为 {{e14_f30_broad}} 个百分点，满足可靠性标准。在合成的低速紧凑场景中，这个差从 {{e14_slow_orig}} 变为 {{e14_slow_broad}}，在合成低速场景中从 {{e14_speed_orig}} 变为 {{e14_speed_broad}}，差距约缩小一半，但仍略低于标准。原场景不退步（{{e14_default}}），代价是平均时延略有升高（图 12、图 13）。</li>"""
 E15_CLAIM = """    <li><strong>探索二：5 dB 阴影作为控制变量（E15）。</strong>阴影已知、在 dB 上零均值时，主要作用是让网络更连通：所有方法的交付率都升高 {{e15_eff_lo}}–{{e15_eff_hi}} 个百分点。网络不再拥堵后，主方法相对 LQ 的交付率优势消失：默认场景 {{e15_default}}，24 节点 {{e15_n24}}，群集 {{e15_flock}} 个百分点，后两者的区间下界越过了标准。主方法的时延仍然更低，ns-3 结论一致（图 14）。</li>"""
+
+E15B_CLAIM = """    <li><strong>探索三：功率归一的阴影（E15b）。</strong>把阴影的平均接收功率调回无阴影时的水平，只保留起伏后，{{e15b_n}} 处可靠性判定{{e15b_ok}}成立：默认场景 {{e15b_default}}，群集 {{e15b_flock}} 个百分点；24 节点场景中主方法仍显著优于 LQ（{{e15b_n24}} 个百分点）。所以 E15 中优势消失，主要来自 dB 零均值阴影带来的额外平均功率，而不是起伏本身（图 15）。</li>"""
+E16_CLAIM = """    <li><strong>确认：独立的 Verdoucq 真实群集（E16）。</strong>这份数据没有参与任何设计，4 次飞行共 128 个场景。零样本主方法相对 LQ 的交付率差为 {{e16_main}} 个百分点（下界 {{e16_main_lo}}），平均时延差 {{e16_main_delay}} s；宽分布主方法为 {{e16_broad}}（下界 {{e16_broad_lo}}），相对原版为 {{e16_bvo}}（下界 {{e16_bvo_lo}}）。{{e16_verdict}}（图 16、图 17）。</li>"""
 
 TEMPLATE = r"""<title>双图微步调度实验</title>
 <meta name="description" content="UAV/FANET 集中式 MAC 调度：双图表示 + 微步 PPO 的定稿方法、E1–E9 实验结果、ns-3 物理层验证（E10）、12 个外部基线（E11）、实测参数信道（E12b）、真实轨迹与第三方移动模型（E13），以及 E13b–E15 后续实验">
@@ -298,6 +324,8 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <li><strong>链路模型与实测收包相符，但实测起伏更大。</strong>在 UCSB 空地实测中，“门限加衰落”模型对各距离段收包率的预测误差为 {{ucsb_mae_rician}}，无衰落的门限模型为 {{ucsb_mae_step}}。用 RSSI 分解起伏：约 {{rssi_slow}} dB 是慢变部分，调度器可以测到；约 {{rssi_fast}} dB 是快变部分，相当于 K ≈ 5 dB 的莱斯衰落，比本模型采用的 K = 10 dB 更不稳定。</li>
     <!--E14-->
     <!--E15-->
+    <!--E15B-->
+    <!--E16-->
   </ul>
 
   <figure id="fig-forest">
@@ -423,6 +451,8 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <li><strong>E13b 真实轨迹上训练全部可训练基线</strong> <span class="tag">{{e13b_tag}}</span>：GRLinQ 式、独立决定 PPO、仅模仿，与 E13 同样按折重新训练。对照扩充到 E11 的全部 13 个。完成后，图 10 和图 11 会包含这些策略。</li>
     <li><strong>E14 探索：训练分布覆盖低速和紧凑机群</strong> <span class="tag">{{e14_tag}}</span>：每个回合以 1/2 的概率取原训练分布，以 1/2 的概率取“低速紧凑”分布。后者速度 0–5 m/s，场地 150–300 m，16–30 个节点，参数只根据与方法无关的拓扑统计确定。全部学习方法都在这个分布上重新训练，用新的测试种子评估。</li>
     <li><strong>E15 探索：5 dB 阴影作为控制变量</strong> <span class="tag">{{e15_tag}}</span>：在实测参数信道上加入 σ = 5 dB 的对数正态阴影。阴影调度器已知。有阴影和无阴影两种条件使用同一批场景和同一组快衰落样本，各测一套，方法冻结。</li>
+    <li><strong>E15b 探索：功率归一的阴影</strong> <span class="tag">{{e15b_tag}}</span>：阴影图样与 E15 相同，但 dB 均值下调 2.9 dB，平均接收功率与无阴影时相同，只增加起伏。与 E15 用同一批场景，三种条件逐场景配对。</li>
+    <li><strong>E16 确认：Verdoucq 10 架真实群集</strong> <span class="tag">{{e16_tag}}</span>：一份没有参与任何设计的真实群集数据，只做零样本评估。几何按固定规则整体缩放 8.57 倍，使单跳内节点对比例与训练场景相同。这份数据的拓扑变化与训练场景一样快，确认的是“独立的真实群集”，不专门针对低速情形。</li>
   </ul>
   <div id="e14-wrap" hidden>
     <figure id="fig-e14">
@@ -451,6 +481,30 @@ pre.cmd{background:var(--surface);border:1px solid var(--rule);border-radius:8px
     <h3>阴影强度（默认场景族前 32 个场景）</h3>
     <div class="table-wrap"><table id="e15-sigma"></table></div>
     <div id="e15-ns3-wrap"></div>
+  </div>
+  <div id="e15b-wrap" hidden>
+    <figure id="fig-e15b">
+      <p class="fig-title">图 15　功率归一阴影（C2S5U）下主方法相对各策略（E15b）</p>
+      <div class="controls" role="group" aria-label="选择指标" id="e15b-buttons"></div>
+      <div class="table-wrap"><table class="heat" id="e15b-table"></table></div>
+    </figure>
+    <h3>功率归一阴影本身的影响：同一批场景上 C2S5U 与 C2 的对比</h3>
+    <div class="table-wrap"><table id="e15b-effect"></table></div>
+    <h3>功率归一阴影的强度（默认场景族前 32 个场景）</h3>
+    <div class="table-wrap"><table id="e15b-sigma"></table></div>
+  </div>
+  <div id="e16-wrap" hidden>
+    <figure id="fig-e16">
+      <p class="fig-title">图 16　Verdoucq 真实群集：零样本主方法相对各策略（E16）</p>
+      <p class="fig-sub">4 次飞行各 32 个场景；“· 宽分布”为 E14 的训练分布；“· 群集 30 重训”为在 Vásárhelyi 飞行上重新训练的模型（跨数据集）。</p>
+      <div class="controls" role="group" aria-label="选择指标" id="e16-buttons"></div>
+      <div class="table-wrap"><table class="heat" id="e16-table"></table></div>
+    </figure>
+    <figure id="fig-e16b">
+      <p class="fig-title">图 17　Verdoucq 真实群集：宽分布主方法相对各策略（E16）</p>
+      <div class="controls" role="group" aria-label="选择指标" id="e16b-buttons"></div>
+      <div class="table-wrap"><table class="heat" id="e16b-table"></table></div>
+    </figure>
   </div>
 </section>
 
@@ -528,6 +582,10 @@ flowchart LR
       <p>以混合分布训练全部学习方法，在新的测试种子上，与原分布训练的版本比较。</p></div></div>
     <div class="step"><div class="id">E15</div><div><h3>探索：5 dB 阴影作为控制变量 <span class="tag">{{e15_tag}}</span></h3>
       <p>有阴影、无阴影各测一套；设计依据是 UCSB 的 RSSI 分解。</p></div></div>
+    <div class="step"><div class="id">E15b</div><div><h3>探索：功率归一的阴影 <span class="tag">{{e15b_tag}}</span></h3>
+      <p>E15 发现，dB 零均值阴影会抬高平均功率、改善连通性，所以补做功率不变、只加起伏的条件。</p></div></div>
+    <div class="step"><div class="id">E16</div><div><h3>确认：Verdoucq 真实群集 <span class="tag">{{e16_tag}}</span></h3>
+      <p>用第二份、没有参与设计的真实群集数据，确认零样本和宽分布主方法的结论。</p></div></div>
   </div>
 </section>
 
@@ -902,10 +960,21 @@ function effectRows(effect, fams){
       Y.connectivity.map(x=>({cells:[x.label, x.usable.toFixed(3), x.routable.toFixed(3), x.hops.toFixed(2)]})));
     plainTable("e15-sigma", ["条件","主方法交付率","LQ 交付率","主方法 − LQ 交付率（个百分点）","平均时延差（s）"],
       Y.sigma.map(x=>({cells:[x.label, x.dr_main.toFixed(4), x.dr_lq.toFixed(4), {d:x.delivery_ratio,f:fpp}, {d:x.e2e_delay_mean_s,f:fs}]})));
-    if(Y.ns3){ const w=document.getElementById("e15-ns3-wrap"); const h=document.createElement("h3"); h.textContent="ns-3 复核（C2S5 默认场景族）"; w.appendChild(h);
+    if(Y.ns3 && !document.getElementById("e15-ns3")){ const w=document.getElementById("e15-ns3-wrap"); const h=document.createElement("h3"); h.textContent="ns-3 复核（C2S5 默认场景族）"; w.appendChild(h);
       const tw=document.createElement("div"); tw.className="table-wrap"; const tt=document.createElement("table"); tt.id="e15-ns3"; tw.appendChild(tt); w.appendChild(tw);
       plainTable("e15-ns3", ["主方法 − LQ · 轻量","主方法 − LQ · ns-3","主方法 ns-3 − 轻量","LQ ns-3 − 轻量"],
         [{cells:[{d:Y.ns3.lightweight.delivery_ratio,f:fpp},{d:Y.ns3.ns3.delivery_ratio,f:fpp},{d:Y.ns3["fid_主方法"],f:fpp},{d:Y.ns3.fid_longest_queue,f:fpp}]}]); } }
+})();
+(function(){
+  if(DATA.e15b){ const Y=DATA.e15b; document.getElementById("e15b-wrap").hidden=false;
+    heat("e15b-table","e15b-buttons",Y.versus,rowsOf(Y.versus),Y.columns,NAMES);
+    plainTable("e15b-effect", ["策略", ...Y.families.map(f=>f==="flock"?"群集 30（合并）":LABEL[f])], effectRows(Y.effect, Y.families));
+    plainTable("e15b-sigma", ["条件","主方法交付率","LQ 交付率","主方法 − LQ 交付率（个百分点）","平均时延差（s）"],
+      Y.sigma.map(x=>({cells:[x.label, x.dr_main.toFixed(4), x.dr_lq.toFixed(4), {d:x.delivery_ratio,f:fpp}, {d:x.e2e_delay_mean_s,f:fs}]}))); }
+  if(DATA.e16){ const Z=DATA.e16; document.getElementById("e16-wrap").hidden=false;
+    const rows = obj => rowsOf(obj).concat(Object.keys(obj).filter(n=>!ROW_ORDER.includes(n)));
+    heat("e16-table","e16-buttons",Z["主方法"],rows(Z["主方法"]),Z.columns,NAMES);
+    heat("e16b-table","e16b-buttons",Z["主方法·宽"],rows(Z["主方法·宽"]),Z.columns,NAMES); }
 })();
 let rt; new ResizeObserver(()=>{ clearTimeout(rt); rt=setTimeout(drawAll,120); }).observe(document.querySelector(".page"));
 </script>
