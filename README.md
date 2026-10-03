@@ -24,14 +24,14 @@ UAV/FANET MAC 调度强化学习的新研究工程。以双图表示、微动作
 
 | 说明 | 内容 |
 | --- | --- |
-| [导读](docs/guide.md) | 给第一次阅读的人和 AI：注意事项、阅读路线、快速运行、审阅重点 |
-| [代码架构](docs/architecture.md) | 模块契约、可替换组件（槽位）清单、新增实现的步骤、运行记录与续训 |
-| [实现决定](docs/decisions.md) | 环境语义、场景校准、观测/模型/训练选择及依据；与旧工程的差异 |
-| [实验记录](docs/experiments.md) | E1–E13：训练、定稿、测试集、ns-3 物理层验证、12 个外部基线的比较、实测参数信道下的复核、真实轨迹与第三方移动模型上的评估（均预先登记）；E13b 真实轨迹上训练全部可训练基线；E14、E15、E15b 探索实验（训练分布、阴影控制变量、功率归一阴影）；E16 用第二份真实群集数据确认 |
-| [已知问题](docs/known-issues.md) | 局限与待办 |
-| [数据筛选](docs/data-screening.md) | 按整套数据筛选公开数据：A 类（训练测试）与 B 类（环境检验）的逐条核对、待确认事项，以及补齐缺失层的模型参数 |
+| [导读](docs/guide.md) | 给第一次阅读的人和 AI（协作者）：主要结论速览与证据位置、注意事项、阅读路线、快速运行、审阅重点 |
+| [代码架构](docs/architecture.md) | 模块契约、可替换组件（槽位）清单、新增实现的步骤、运行记录与续训、实验脚本与规格 |
+| [实现决定](docs/decisions.md) | 环境语义、场景校准、观测/模型/训练选择及依据；ns-3 执行语义、基线定义、实测参数信道与阴影口径、数据驱动场景；与旧工程的差异 |
+| [实验记录](docs/experiments.md) | E1–E16（开头有索引，均预先登记）：训练与定稿、测试集、ns-3 物理层验证、12 个外部基线、实测参数信道、真实轨迹与第三方移动模型（含全部可训练基线在真实轨迹上重新训练）；探索实验 E14、E15、E15b（训练分布、阴影的两种口径）；确认实验 E16（第二份真实群集数据） |
+| [已知问题](docs/known-issues.md) | 局限、待决定事项与工程注意事项 |
+| [数据筛选](docs/data-screening.md) | 按整套数据筛选公开数据：A 类（训练测试）与 B 类（环境检验）的逐条核对、各套数据的实际用法，以及补齐缺失层的模型参数 |
 
-定稿主方法：`configs/protocol_final.toml`（模仿 longest_queue 预热 + 微步 PPO，完整累计 SINR，不使用已选摘要）。结果报告页由 `tools/build_report.py` 生成。
+定稿主方法：`configs/protocol_final.toml`（模仿 longest_queue 预热 + 微步 PPO，完整累计 SINR，不使用已选摘要）。`configs/explore/` 下是探索用配置，不是定稿方法。结果报告页由 `tools/build_report.py` 生成。真实数据的来源与校验值在 `data/sources.json`，转换脚本在 `tools/data/`。
 
 ```bash
 python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
@@ -42,6 +42,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/fanet-next eval --run-dir results/runs/final-s0 --checkpoint <选中的检查点> --policies ppo --split test --drain 1000
 .venv/bin/fanet-next eval --config configs/protocol_final.toml --policies longest_queue backpressure_opt --backend ns3   # ns-3 执行（需 tools/ns3/setup.sh）
 .venv/bin/fanet-next train-baseline --config configs/baselines/zhao_gcn.toml --run-dir results/e11/runs/zhao_gcn-s0   # 学习基线
+.venv/bin/python tools/e11_compare.py --spec configs/experiments/e13b_flock.json --parallel 6   # 按规格批量评估并汇总
 ```
 
 ## 工作位置

@@ -33,7 +33,7 @@
 
 | 职责（module-design.md） | 槽位 | 位置 | 当前实现 |
 | --- | --- | --- | --- |
-| 场景与业务 | `scenario`、`routing`、`channel` | `scenario/` | random（主）、fixed（脚本化）、trace（回放记录的轨迹：公开飞行日志或第三方移动模型的输出，按整条轨迹划分训练、开发和测试）；min_hop；ideal（主）、lognormal、rician（变体：空空实测参数，莱斯块衰落加衰落裕量，decisions.md 第 10 节） |
+| 场景与业务 | `scenario`、`routing`、`channel` | `scenario/` | 场景：random（主；节点数、速度、负载、场地边长都可以取范围，每回合抽样）、fixed（脚本化）、trace（变体：回放记录的轨迹，即公开飞行日志或第三方移动模型的输出，按整条轨迹划分训练、开发和测试，decisions.md 第 11 节）、mixture（变体：多个场景分布按种子混合，只用于 E14 探索）。路由：min_hop。信道：ideal（主）、lognormal、rician（变体：空空实测参数，莱斯块衰落加衰落裕量，可选阴影及其两种口径，decisions.md 第 10 节） |
 | 环境与执行后端 | `backend` | `backend/` | lightweight（主）；ns3（变体：ns-3.48 物理层执行 + 帧内运动，或用于对齐的 SINR 账本；见 decisions.md 第 8 节） |
 | 观测与双图 | `observation` | `observation/` | standard |
 | 模型 | `model` 及 `comm_encoder`、`lift`、`interaction_encoder`、`set_summary`、`actor_head`、`critic_head` | `model/` | dual_graph；各子部件都有主实现和消融对照。`set_summary`：none（主）、gated_sum（对照，研究方案原设计）、gated_mean（变体）；模型选项 `candidate_dynamics` 接入控制器逐步提供的候选特征（变体） |
@@ -109,7 +109,42 @@
 .venv/bin/fanet-next components
 .venv/bin/fanet-next train --config configs/base.toml --run-dir results/runs/base-s0
 .venv/bin/fanet-next resume --run-dir results/runs/base-s0 --iterations 300
+.venv/bin/fanet-next select --run-dir results/runs/base-s0            # 固定规则选检查点，写 selection.json
 .venv/bin/fanet-next eval --run-dir results/runs/base-s0 --policies ppo longest_queue random --split dev
 .venv/bin/fanet-next eval --config configs/base.toml --set constraints.interference=pairwise --policies longest_queue
+.venv/bin/fanet-next train-baseline --config configs/baselines/zhao_gcn.toml --run-dir results/runs/zhao-s0
 .venv/bin/python -m pytest -q
 ```
+
+- `--scenario 文件` 用另一个配置文件的 `[scenario]` 段整段替换场景，可用于 `train`、`train-baseline`、`eval`。例如在群集轨迹上训练：`--scenario configs/datasets/flock30.toml`。
+- `--set a.b=值` 在此基础上改单个参数。换 `type` 时，该段的旧参数会被清空（known-issues.md 第 14 条）。
+- 实验脚本在评估任务里写 `--checkpoint @selected`，启动前由脚本（`tools/confirm.py` 的 `resolve`）换成运行目录 `selection.json` 中选中的检查点；命令行本身不认这个写法。
+
+## 6. 实验脚本与规格
+
+实验的场景、策略和测试种子写在 `configs/experiments/*.json` 中，脚本按规格生成评估任务。输出已存在的任务会跳过，所以中断后重跑只补缺的部分。
+
+**评估规格**的主要字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `eval` | `split`（test）、`seed_offset`、`episodes`、`drain`、`shards` |
+| `executors` | `{"lightweight": null}`，或再加 `{"ns3": "ns3"}` 用 ns-3 执行 |
+| `scenarios` | 场景名 → `--set` 列表，或 `{"scenario": 配置文件, "set": [...]}` |
+| `baselines` / `baseline_config` | 无需训练的策略及其配置 |
+| `groups` | 学习型策略：运行目录列表（各训练种子），或“场景 → 运行目录”（按场景分别训练，如按折） |
+| `fixed` | 单个固定检查点 |
+| `shard_policies`、`exclude` | 慢策略的分片；某场景不跑的策略 |
+
+**训练规格**（`*_train.json`，由 `tools/train_runs.py` 读取）：方法（命令、种子、相对耗时、估计内存、优先级）与训练场景的交叉。中断的运行会续训；训练结束后立即按固定规则选检查点。
+
+| 脚本 | 用途 |
+| --- | --- |
+| `tools/e11_compare.py --spec S` | 评估一个规格，写出 `summary.md`（主方法相对每个策略的配对差） |
+| `tools/run_specs.py S1 S2 ...` | 多个规格共用一个队列，最长的任务先跑，最后各写 `summary.md` |
+| `tools/e10_ns3.py --spec S` | 含 ns-3 执行的规格；`--status --watch 30` 显示进度 |
+| `tools/train_runs.py T1 T2 ...` | 按内存上限并行训练、续训、选检查点 |
+| `tools/e12_channel.py`、`e13_data.py`、`e14_summary.py`、`e15_summary.py` | 各实验预登记比较的汇总（多场景合并、配对差、差中差） |
+| `tools/build_report.py` | 从结果文件生成报告页 `results/report/report.html` |
+
+结果写在 `results/` 下，不进版本库。汇总中的数字已抄入 `docs/experiments.md`。
