@@ -1,0 +1,61 @@
+{
+ "name": "E18 开发集比较：评论者贡献的阶梯与定稿方法（开发种子 16–47，排空 1000）",
+ "out": "results/e18/dev",
+ "main": "主方法",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 16,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "default": [],
+  "load_high": [
+   "scenario.flow_rate_pps=[30.0, 45.0]"
+  ],
+  "nodes24_same_density": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ]
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2"
+  ],
+  "L1·只作参照线": [
+   "results/e18/runs/adv_lambda1-s0",
+   "results/e18/runs/adv_lambda1-s1",
+   "results/e18/runs/adv_lambda1-s2"
+  ],
+  "L0·不用评论者": [
+   "results/e18/runs/no_critic-s0",
+   "results/e18/runs/no_critic-s1",
+   "results/e18/runs/no_critic-s2"
+  ],
+  "L2·λ=0.8": [
+   "results/e18/runs/adv_lambda08-s0",
+   "results/e18/runs/adv_lambda08-s1",
+   "results/e18/runs/adv_lambda08-s2"
+  ],
+  "S·评论者独立主干": [
+   "results/e18/runs/separate_critic-s0",
+   "results/e18/runs/separate_critic-s1",
+   "results/e18/runs/separate_critic-s2"
+  ],
+  "模仿起点": [
+   "results/e18/runs/imitation_start-s0",
+   "results/e18/runs/imitation_start-s1",
+   "results/e18/runs/imitation_start-s2"
+  ]
+ }
+}

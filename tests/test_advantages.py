@@ -93,3 +93,40 @@ def test_flat_credit_removes_within_cycle_value_changes_and_keeps_lambda_per_mic
     step = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
     compute_stream_advantages(step, G, LAM)
     assert np.array_equal(flat[0].returns, step[0].returns)
+
+
+def test_advantage_lambda_changes_only_the_advantages():
+    """adv_lam (E18): the actor's advantages use their own lambda; value targets keep lam."""
+    v0, v1, w0, b = 1.0, 2.0, 0.5, 3.0
+    r1, r2 = 0.3, -0.2
+    one = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    compute_stream_advantages(one, G, LAM, adv_lam=1.0)
+    a2 = r2 + G * b - w0
+    a1 = r1 + G * w0 - v1 + G * 1.0 * a2
+    a0 = (v1 - v0) + 1.0 * a1  # lambda = 1: within-chunk Monte Carlo minus the baseline v0
+    assert one[0].advantages == pytest.approx([a0, a1], rel=1e-6)
+    assert a0 == pytest.approx(r1 + G * (r2 + G * b) - v0)
+    step = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    same = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    compute_stream_advantages(step, G, LAM)
+    compute_stream_advantages(same, G, LAM, adv_lam=LAM)
+    for s_, o_, m_ in zip(step, one, same):
+        assert np.array_equal(s_.returns, o_.returns)
+        assert np.array_equal(s_.advantages, m_.advantages) and np.array_equal(s_.returns, m_.returns)
+
+
+def test_no_critic_credit_ignores_every_value():
+    """credit = "none" (E18): discounted reward-to-go, no baseline, no bootstrap; targets unchanged."""
+    v0, v1, w0, b = 1.0, 2.0, 0.5, 3.0
+    r1, r2 = 0.3, -0.2
+    none = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    compute_stream_advantages(none, G, LAM, credit="none", adv_lam=1.0)
+    assert none[1].advantages == pytest.approx([r2], rel=1e-6)
+    assert none[0].advantages == pytest.approx([r1 + G * r2, r1 + G * r2], rel=1e-6)
+    other = [rec([5.0, -4.0], r1, "continue"), rec([7.0], r2, "truncated", bootstrap=-9.0)]
+    compute_stream_advantages(other, G, LAM, credit="none", adv_lam=1.0)
+    for n_, o_ in zip(none, other):
+        assert np.array_equal(n_.advantages, o_.advantages)
+    step = [rec([v0, v1], r1, "continue"), rec([w0], r2, "truncated", bootstrap=b)]
+    compute_stream_advantages(step, G, LAM)
+    assert np.array_equal(none[0].returns, step[0].returns)

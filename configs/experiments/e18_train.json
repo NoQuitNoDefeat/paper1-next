@@ -1,0 +1,86 @@
+{
+ "name": "E18 评论者贡献的阶梯：L1（只作参照线）、L0（不用评论者）、L2（λ = 0.8）、S（评论者独立主干）、模仿起点",
+ "runs": "results/e18/runs/{kind}-s{seed}",
+ "scenarios": {
+  "base": {}
+ },
+ "kinds": {
+  "adv_lambda1": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e18_adv_lambda1.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.0,
+   "mem_gb": 1.6,
+   "priority": 0
+  },
+  "no_critic": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e18_no_critic.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.0,
+   "mem_gb": 1.6,
+   "priority": 0
+  },
+  "adv_lambda08": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e18_adv_lambda08.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.0,
+   "mem_gb": 1.6,
+   "priority": 0
+  },
+  "separate_critic": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e18_separate_critic.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.2,
+   "mem_gb": 1.9,
+   "priority": 0
+  },
+  "imitation_start": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/protocol_final.toml",
+    "--iterations",
+    "0"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 0.1,
+   "mem_gb": 1.2,
+   "priority": 0
+  }
+ }
+}

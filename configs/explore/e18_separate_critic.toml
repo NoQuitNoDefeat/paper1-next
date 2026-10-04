@@ -1,0 +1,7 @@
+# E18 臂 S（探索，2026-10-04，不替代定稿配置）：评论者有自己的编码器（拆开共享主干）。
+# 评论者的估值只来自它自己的编码器，价值损失不再进入行动者的编码器。其余与定稿方法相同。
+extends = "../protocol_final.toml"
+name = "e18-separate-critic"
+
+[model]
+share_trunk = false

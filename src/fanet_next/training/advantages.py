@@ -88,7 +88,7 @@ def cycle_advantages(records: list[CycleRecord], gamma: float, lam: float) -> np
 
 
 def compute_stream_advantages(records: list[CycleRecord], gamma: float, lam: float,
-                              credit: str = "step") -> None:
+                              credit: str = "step", adv_lam: float | None = None) -> None:
     """Fill ``advantages`` and ``returns`` (= A + V_old) of every record in place.
 
     ``credit = "step"``: micro-step GAE (the method's default).
@@ -97,14 +97,24 @@ def compute_stream_advantages(records: list[CycleRecord], gamma: float, lam: flo
     value changes do not enter the advantages and nothing else changes (E17 arm A1').
     ``credit = "cycle"``: one advantage per cycle from ``cycle_advantages`` for all its micro
     actions; this also moves lambda from once per micro transition to once per cycle (E17 A1).
-    The value targets (``returns``) stay the micro-step lambda-returns in every mode."""
-    if credit not in ("step", "flat", "cycle"):
+    ``credit = "none"``: the critic's values do not enter the advantages at all (every value and
+    bootstrap value taken as 0): discounted reward-to-go, cut at the end of the rollout slice; the
+    mean is removed only by the trainer's advantage normalisation (E18).
+    ``adv_lam``: lambda of the advantages when it differs from the value targets' ``lam`` (E18).
+    The value targets (``returns``) stay the micro-step ``lam``-returns in every mode."""
+    if credit not in ("step", "flat", "cycle", "none"):
         raise ValueError(f"unknown credit {credit!r}")
     if not records:
         return
+    lam_a = lam if adv_lam is None else float(adv_lam)
     r, v, nv, g, b, c = flatten_stream(records, gamma)
     adv = gae(r, v, nv, g, b, c, lam)
     ret = adv + np.asarray(v)
+    if lam_a != lam:
+        adv = gae(r, v, nv, g, b, c, lam_a)
+    if credit == "none":
+        zeros = np.zeros(len(r))
+        adv = gae(r, zeros, zeros, g, b, c, lam_a)
     if credit == "flat":
         vf, nvf = np.asarray(v, dtype=np.float64).copy(), np.asarray(nv, dtype=np.float64).copy()
         pos = 0
@@ -114,8 +124,8 @@ def compute_stream_advantages(records: list[CycleRecord], gamma: float, lam: flo
             vf[pos:pos + k + 1] = v0  # micro states and the complete-plan state
             nvf[pos:pos + k] = v0  # successors inside the cycle; the boundary successor stays
             pos += k + 1
-        adv = gae(r, vf, nvf, g, b, c, lam)
-    per_cycle = cycle_advantages(records, gamma, lam) if credit == "cycle" else None
+        adv = gae(r, vf, nvf, g, b, c, lam_a)
+    per_cycle = cycle_advantages(records, gamma, lam_a) if credit == "cycle" else None
     pos = 0
     for i, rec in enumerate(records):
         n = rec.num_actions + 1
