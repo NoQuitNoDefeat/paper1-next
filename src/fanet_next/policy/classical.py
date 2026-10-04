@@ -25,10 +25,17 @@ def queue_weights(inp) -> np.ndarray:
     return packets + 1e-3 * np.minimum(hol, 100.0)
 
 
-def backpressure_weights(inp) -> np.ndarray:
-    """Backpressure with fixed routes (Tassiulas-Ephremides): for link (u, v), the largest
-    commodity backlog differential Q_u^d - Q_v^d over the destinations d present in queue
-    (u, v), floored at 0 (Q_d^d = 0).  Q_x^d counts x's queued packets destined to d."""
+def _queue_index(rep) -> np.ndarray:
+    n = rep.num_nodes
+    qmat = -np.ones((n, n), dtype=np.int64)
+    qmat[rep.queue_links[:, 0], rep.queue_links[:, 1]] = np.arange(len(rep.queue_links))
+    return qmat
+
+
+def backpressure_differential(inp) -> np.ndarray:
+    """For candidate (u, v): the largest commodity backlog differential Q_u^d - Q_v^d over the
+    destinations d present in queue (u, v) (Q_d^d = 0), not floored.  Q_x^d counts x's queued
+    packets destined to d."""
     rep, links = inp.report, inp.problem.links
     if len(links) == 0:
         return np.zeros(0)
@@ -37,14 +44,52 @@ def backpressure_weights(inp) -> np.ndarray:
     n = rep.num_nodes
     node_dst = np.zeros((n, n))
     np.add.at(node_dst, rep.queue_links[:, 0], rep.queue_dst)
-    qmat = -np.ones((n, n), dtype=np.int64)
-    qmat[rep.queue_links[:, 0], rep.queue_links[:, 1]] = np.arange(len(rep.queue_links))
-    q = qmat[links[:, 0], links[:, 1]]
+    q = _queue_index(rep)[links[:, 0], links[:, 1]]
     present = rep.queue_dst[q] > 0  # (C, N)
     diff = node_dst[links[:, 0]] - node_dst[links[:, 1]]  # (C, N)
-    w = np.where(present, diff, -np.inf).max(axis=1)
+    return np.where(present, diff, -np.inf).max(axis=1)
+
+
+def backpressure_weights(inp) -> np.ndarray:
+    """Backpressure with fixed routes (Tassiulas-Ephremides): the commodity differential of
+    ``backpressure_differential`` floored at 0, ties broken by the longer queue."""
+    if len(inp.problem.links) == 0:
+        return np.zeros(0)
     packets, _ = queue_view(inp)
-    return np.maximum(w, 0.0) + 1e-3 * packets  # ties: longer queue
+    return np.maximum(backpressure_differential(inp), 0.0) + 1e-3 * packets  # ties: longer queue
+
+
+def admissible_packets(inp) -> np.ndarray:
+    """For candidate (u, v): queued packets of (u, v) the receiver could admit at decision time:
+    destined to v, or their next queue at v has room (no route at v: room in v's waiting area).
+    Arrivals within the cycle are ignored (decision-time view)."""
+    rep, links = inp.report, inp.problem.links
+    if len(links) == 0:
+        return np.zeros(0)
+    if rep.queue_dst is None:
+        raise ValueError("needs per-destination queue counts (Report.queue_dst)")
+    qmat = _queue_index(rep)
+    free = rep.queues.capacity - rep.queues.packets
+    wait_free = rep.waiting_capacity - rep.waiting_packets
+    out = np.zeros(len(links))
+    for i, (u, v) in enumerate(links):
+        counts = rep.queue_dst[qmat[u, v]]
+        for d in np.nonzero(counts)[0]:
+            nh = rep.next_hop[v, d]
+            ok = d == v or (free[qmat[v, nh]] > 0 if nh >= 0 else wait_free[v] > 0)
+            out[i] += counts[d] if ok else 0
+    return out
+
+
+def _greedy_allowed(inp, score: np.ndarray, allowed: np.ndarray) -> list[int]:
+    """Highest score first among the allowed feasible candidates; stops when none is left, so
+    allowed-out candidates stay idle even when feasible."""
+    ctl = inp.controller
+    while True:
+        idx = np.nonzero(ctl.mask & allowed)[0]
+        if len(idx) == 0:
+            return list(ctl.selected)
+        ctl.step(int(idx[np.argmax(score[idx])]))
 
 
 def _weights(kind: str, inp) -> np.ndarray:
@@ -100,6 +145,31 @@ class Backpressure(_ScoreGreedy):
 
     def scores(self, inp):
         return backpressure_weights(inp)
+
+
+@POLICY.register("backpressure_hold", role="control")
+class BackpressureHold(Policy):
+    """Diagnostic control (D4): greedy backpressure as in the classical algorithm, i.e. only
+    links with a positive commodity differential transmit; no completion to a maximal set."""
+
+    maximal_plans = False
+
+    def act(self, inputs, *, mode="sample"):
+        return [DecisionOutput(actions=_greedy_allowed(inp, backpressure_weights(inp),
+                                                       backpressure_differential(inp) > 0))
+                for inp in inputs]
+
+
+@POLICY.register("lq_hold", role="control")
+class LongestQueueHold(Policy):
+    """Diagnostic control (D4): longest_queue that leaves a link idle when its receiver could
+    admit none of the link's queued packets (every next queue at the receiver is full)."""
+
+    maximal_plans = False
+
+    def act(self, inputs, *, mode="sample"):
+        return [DecisionOutput(actions=_greedy_allowed(inp, queue_weights(inp), admissible_packets(inp) > 0))
+                for inp in inputs]
 
 
 @POLICY.register("lq_local_search", role="baseline")

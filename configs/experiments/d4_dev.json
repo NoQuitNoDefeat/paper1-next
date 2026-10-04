@@ -1,0 +1,39 @@
+{
+ "name": "D4 发送与否的取舍：经典策略留空与补满的对照，及与定稿方法的比较（开发种子 16–47，排空 1000）",
+ "out": "results/d4/dev",
+ "main": "主方法",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 16,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "default": [],
+  "load_high": [
+   "scenario.flow_rate_pps=[30.0, 45.0]"
+  ],
+  "nodes24_same_density": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ]
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "lq_hold",
+  "backpressure",
+  "backpressure_hold"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2"
+  ]
+ }
+}

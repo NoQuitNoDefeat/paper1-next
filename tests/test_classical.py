@@ -115,3 +115,31 @@ def test_spatial_tdma_rotates_queue_oblivious_slots():
     filled = build_policy(cfg, {"type": "spatial_tdma", "links": "routed"})._frame(inp.report)
     assert len(filled) == len(bare) and set().union(*filled) == routed
     assert all(a <= b for a, b in zip(bare, filled)) and sum(map(len, filled)) > len(routed)
+
+
+@pytest.mark.parametrize("name", ["backpressure_hold", "lq_hold"])
+def test_hold_controls_send_only_allowed_links_and_leave_the_rest_idle(name):
+    """D4 controls: every chosen link is allowed (positive differential / receiver can admit),
+    the plan stops only when no allowed candidate is feasible, and under congestion feasible
+    links are left idle (the plans are not maximal)."""
+    from fanet_next.loop import EndType
+    from fanet_next.policy.classical import admissible_packets, backpressure_differential
+
+    rule = {"backpressure_hold": lambda inp: backpressure_differential(inp) > 0,
+            "lq_hold": lambda inp: admissible_packets(inp) > 0}[name]
+    cfg = load_config("configs/protocol_final.toml", ["scenario.flow_rate_pps=60.0", "scenario.horizon=120"])
+    env = build_env(cfg, run_id="t", build_graph=False)
+    policy = build_policy(cfg, name, seed=0)
+    inp = env.reset(0)
+    held = 0
+    for _ in range(120):
+        ok = rule(inp)
+        out = policy.act([inp])[0]
+        assert all(ok[a] for a in out.actions)
+        assert not (inp.controller.mask & ok).any()
+        held += int((inp.controller.mask & ~ok).any())
+        tr = env.step(out.actions)
+        if tr.end is not EndType.CONTINUE:
+            break
+        inp = tr.next_input
+    assert held > 0
