@@ -79,19 +79,25 @@ def _rollout(env, policy, plan, seed: int, scale: float, gamma: float, weights: 
         actions = None
 
 
-def probe_state(args) -> dict | None:
-    run, idx, k_samples, m_policy, reps, horizon = args
-    cfg, policy, scale, gamma = _setup(run)
+def reach_state(cfg, policy, idx: int, base: int = DEV_BASE, prefix: str = "d3"):
+    """Run the policy (sampling) to a random cycle t0 in [60, 150] of dev scene ``base + idx``.
+    Returns (env, rng, t0), or None when the episode ended first."""
     rng = np.random.default_rng(1_000 + idx)
-    env = build_env(cfg, run_id=f"d3-{idx}")
-    weights = {k: w * float(getattr(env.reward, "scale", 1.0)) for k, w in env.reward.weights().items()}
-    env.reset(DEV_BASE + idx, episode=idx)
+    env = build_env(cfg, run_id=f"{prefix}-{idx}")
+    env.reset(base + idx, episode=idx)
     t0 = int(rng.integers(60, 151))
     policy.generator.manual_seed(800_000 + idx)
     for _ in range(t0):  # reach the state with the policy itself
         tr = env.step(list(policy.act([env.current], mode="sample")[0].actions))
         if tr.end is not EndType.CONTINUE:
             return None
+    return env, rng, t0
+
+
+def candidate_plans(env, policy, cfg, idx: int, rng, k_samples: int, m_policy: int):
+    """The most frequent distinct plans among ``k_samples`` policy samples (at most ``m_policy``),
+    plus the longest-queue plan and one uniformly random complete plan when they differ.
+    Returns (plans keyed by the sorted link set, V0, number of distinct sampled plans)."""
     sampled: dict[tuple, dict] = {}
     v0 = None
     for i in range(k_samples):
@@ -119,7 +125,19 @@ def probe_state(args) -> dict | None:
         else:
             plans[key] = {"order": order, "source": source, "count": sampled.get(key, {}).get("count", 0),
                           "vk": None}
-    res = {"index": idx, "t0": t0, "v0": v0, "distinct_sampled": len(sampled), "plans": []}
+    return plans, v0, len(sampled)
+
+
+def probe_state(args) -> dict | None:
+    run, idx, k_samples, m_policy, reps, horizon = args
+    cfg, policy, scale, gamma = _setup(run)
+    reached = reach_state(cfg, policy, idx)
+    if reached is None:
+        return None
+    env, rng, t0 = reached
+    weights = {k: w * float(getattr(env.reward, "scale", 1.0)) for k, w in env.reward.weights().items()}
+    plans, v0, n_sampled = candidate_plans(env, policy, cfg, idx, rng, k_samples, m_policy)
+    res = {"index": idx, "t0": t0, "v0": v0, "distinct_sampled": n_sampled, "plans": []}
     for key, p in plans.items():
         runs = [_rollout(copy.deepcopy(env), policy, p["order"], 50_000 + r, scale, gamma, weights, horizon)
                 for r in range(reps)]

@@ -192,3 +192,28 @@ def test_ontime_ratio_counts_drops_as_late():
     assert s["born"] == 3 and s["delivered"] == 2 and s["term_queue_overflow"] == 1
     assert s["ontime_1s"] == pytest.approx(2 / 3)  # the dropped packet is never on time
     assert isinstance(MetricsAccumulator().summary()["ontime_2s"], float)
+
+
+@pytest.mark.parametrize("reward", ["standard", "fixed_violation_ref"])
+def test_reward_splits_exactly_over_nodes(reward):
+    """terminated_nodes counts every terminated packet once; reward.by_node sums to the reward."""
+    from fanet_next.config import load_config
+    from fanet_next.experiment.assemble import build_env, build_policy
+
+    cfg = load_config("configs/protocol_final.toml", ["scenario.flow_rate_pps=60.0", "scenario.horizon=80",
+                                                       f"reward.type={reward}"])
+    env = build_env(cfg, run_id="t", build_graph=False)
+    policy = build_policy(cfg, "longest_queue", seed=0)
+    inp = env.reset(1)
+    dropped = 0
+    for _ in range(80):
+        tr = env.step(policy.act([inp])[0].actions)
+        f = tr.facts
+        assert sum(f.terminated_nodes.values()) == len(set(f.terminated_ids))
+        split = env.reward.by_node(f, env.backend.qlinks, env.backend.sc.num_nodes)
+        assert split.sum() == pytest.approx(tr.reward.total, abs=1e-12)
+        dropped += len(f.terminated_ids)
+        inp = tr.next_input
+        if tr.end is not EndType.CONTINUE:
+            break
+    assert dropped > 0

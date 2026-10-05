@@ -304,11 +304,13 @@ def facts_from(cycle: dict, ep: Episode, k: int, radio: dict | None = None) -> C
     events = cycle["events"]
     delivered = [e for e in events if e["kind"] == "delivery"]
     terminations: dict[str, list[int]] = {}
+    terminated_nodes: dict[int, int] = {}
     relay_terminated = 0
     for e in events:
         if e["kind"] == "terminal":
             reason = TERMINAL_REASON.get(e["reason"], e["reason"])
             terminations.setdefault(reason, []).append(e["packet_id"])
+            terminated_nodes[int(e["node_id"])] = terminated_nodes.get(int(e["node_id"]), 0) + 1
             relay_terminated += int(e["node_id"] != ep.source_of.get(e["packet_id"], e["node_id"]))
     nxt = cycle["next_observation"]
     return CycleFacts(
@@ -329,7 +331,8 @@ def facts_from(cycle: dict, ep: Episode, k: int, radio: dict | None = None) -> C
         rehomed=sum(e["origin"] == "rehome" for e in events
                     if e["kind"] in ("queue_admit", "wait_admit", "terminal")),
         relay_terminated=relay_terminated,
-        radio_events=_count_kinds(radio["events"]) if radio else {})
+        radio_events=_count_kinds(radio["events"]) if radio else {},
+        terminated_nodes=terminated_nodes)
 
 
 def _count_kinds(events: list[dict]) -> dict[str, int]:

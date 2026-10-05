@@ -209,11 +209,13 @@ class LightweightBackend(Backend):
 
         # 3. terminations due at t1
         term: dict[str, list[int]] = defaultdict(list)
+        term_nodes: dict[int, int] = defaultdict(int)
         relay_terminated = 0
 
         def terminate(reason: str, pkt: Packet) -> None:
             nonlocal relay_terminated
             term[reason].append(pkt.pid)
+            term_nodes[int(pkt.node)] += 1
             relay_terminated += int(pkt.node != pkt.src)
 
         if self.retry_limit is not None:
@@ -305,7 +307,8 @@ class LightweightBackend(Backend):
             delivered_delays=facts_delays, delivered_bytes=delivered_bytes,
             terminations=dict(term), queued_end=queued1, waiting_end=waiting1,
             waiting_post_service=waiting_post, moved_to_waiting=moved_to_waiting,
-            restored_from_waiting=restored, rehomed=rehomed, relay_terminated=relay_terminated)
+            restored_from_waiting=restored, rehomed=rehomed, relay_terminated=relay_terminated,
+            terminated_nodes=dict(term_nodes))
 
         self.cycle = k + 1
         self.report = self._make_report()

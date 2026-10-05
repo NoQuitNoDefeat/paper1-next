@@ -49,6 +49,27 @@ def reward_components(facts: CycleFacts, hol_ref_s: float,
     return {"service": service, "queue": queue, "delay": delay, "violation": violation}
 
 
+def reward_by_node(facts: CycleFacts, queue_links: np.ndarray, num_nodes: int, weights: dict[str, float],
+                   hol_ref_s: float, scale: float = 1.0, violation_ref: float | None = None) -> np.ndarray:
+    """The cycle reward split over nodes, exactly additive (sums to the total up to rounding):
+    each registered queue's service / queue / delay term (divided by the number of queues) goes
+    to the queue's transmitter, each terminated packet's violation share to the node where it was
+    terminated (``facts.terminated_nodes``); the denominators stay network-wide."""
+    out = np.zeros(num_nodes)
+    post = facts.post_service
+    n_q = len(post.packets)
+    if n_q:
+        service = facts.served_bytes / max(facts.service_ref_bytes, 1)
+        occ = post.packets / np.maximum(post.capacity, 1)
+        delay = occ * np.minimum(post.hol_wait / hol_ref_s, 1.0)
+        per_q = (weights["service"] * service + weights["queue"] * occ + weights["delay"] * delay) / n_q
+        np.add.at(out, np.asarray(queue_links, dtype=np.int64).reshape(-1, 2)[:, 0], per_q)
+    denom = max(facts.risk_packets, 1) if violation_ref is None else violation_ref
+    for node, count in facts.terminated_nodes.items():
+        out[node] += weights["violation"] * count / denom
+    return scale * out
+
+
 @REWARD.register("standard", role="primary")
 class StandardReward:
     """alpha*service - beta*queue - eta*delay - lambda_viol*violation (all from facts)."""
@@ -67,6 +88,11 @@ class StandardReward:
         parts = reward_components(facts, self.hol_ref_s)
         total = self.scale * sum(w * parts[k] for k, w in self.weights().items())
         return RewardBreakdown(total=float(total), parts=parts)
+
+    def by_node(self, facts: CycleFacts, queue_links: np.ndarray, num_nodes: int) -> np.ndarray:
+        """Per-node split of ``self(facts).total`` (see ``reward_by_node``)."""
+        return reward_by_node(facts, queue_links, num_nodes, self.weights(), self.hol_ref_s, self.scale,
+                              getattr(self, "violation_ref", None))
 
 
 @REWARD.register("fixed_violation_ref", role="control")
