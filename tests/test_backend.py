@@ -217,3 +217,141 @@ def test_reward_splits_exactly_over_nodes(reward):
         if tr.end is not EndType.CONTINUE:
             break
     assert dropped > 0
+
+
+# --------------------------------------------------------------- stage-0 diagnostic options
+def _lw(**opts):
+    return {"type": "lightweight", "routing": {"type": "min_hop", "update_every": 1}, **opts}
+
+
+def _link(inp, link):
+    return [tuple(l) for l in inp.problem.links].index(link)
+
+
+@pytest.mark.parametrize("order,delivered", [("fifo", 0), ("fewest_hops", 2)])
+def test_service_order_fewest_hops_sends_last_hop_packets_first(order, delivered):
+    # queue (0,1) holds two packets for 2 (born first) and two for 1; two packets per cycle
+    births = [(0.001, 0, 2), (0.002, 0, 2), (0.003, 0, 1), (0.004, 0, 1)]
+    env = fixed_env(line_positions(3), births, horizon=4, backend=_lw(service_order=order))
+    env.reset(0)
+    inp = env.step([]).next_input
+    tr = env.step([_link(inp, (0, 1))])
+    assert len(tr.facts.delivered_ids) == delivered
+    assert sum(tr.facts.served_packets) == 2
+
+
+@pytest.mark.parametrize("room,drops", [(False, 2), (True, 0)])
+def test_room_aware_service_keeps_packets_the_receiver_cannot_admit(room, drops):
+    # queue (1,2) is full (capacity 2); node 0 sends two packets for 2 through node 1
+    births = [(0.001, 1, 2), (0.002, 1, 2), (0.003, 0, 2), (0.004, 0, 2)]
+    env = fixed_env(line_positions(3), births, horizon=4, queue_capacity=2,
+                    backend=_lw(room_aware_service=room))
+    env.reset(0)
+    inp = env.step([]).next_input
+    tr = env.step([_link(inp, (0, 1))])
+    assert len(tr.facts.terminations.get("queue_overflow", [])) == drops
+    b = env.backend
+    assert b.totals["born"] == b.totals["delivered"] + b.totals["terminated"] + sum(b.in_system())
+
+
+def test_require_room_candidates_leave_links_into_full_queues_out():
+    births = [(0.001, 1, 2), (0.002, 1, 2), (0.003, 0, 2), (0.004, 0, 2)]
+    env = fixed_env(line_positions(3), births, horizon=4, queue_capacity=2,
+                    candidates={"type": "standard", "require_room": True})
+    env.reset(0)
+    inp = env.step([]).next_input
+    links = [tuple(l) for l in inp.problem.links]
+    assert (1, 2) in links and (0, 1) not in links
+
+
+@pytest.mark.parametrize("opts,drops", [({}, 1), ({"buffer": "shared", "node_buffer_packets": 4}, 0)])
+def test_shared_buffer_pools_the_node_limit_and_reports_room(opts, drops):
+    # three births at node 0 for node 1; per-queue limit 2, shared node pool 4
+    births = [(0.001, 0, 1), (0.002, 0, 1), (0.003, 0, 1)]
+    env = fixed_env(line_positions(3), births, horizon=3, queue_capacity=2, backend=_lw(**opts))
+    env.reset(0)
+    tr = env.step([])
+    assert len(tr.facts.terminations.get("queue_overflow", [])) == drops
+    q = tr.next_input.report.queues
+    assert np.all(q.packets <= q.capacity)  # occupancy stays within [0, 1]
+    if opts:
+        i = int(np.nonzero((tr.next_input.report.queue_links == [0, 1]).all(axis=1))[0][0])
+        assert q.packets[i] == 3 and q.capacity[i] == 4  # 3 queued + 1 free slot of the pool
+
+
+def test_rehome_overflow_exceed_removes_rehome_drops_only():
+    from fanet_next.config import load_config
+    from fanet_next.experiment.assemble import build_env, build_policy
+
+    out = {}
+    for mode in ("drop", "exceed"):
+        cfg = load_config("configs/protocol_final.toml", [
+            "scenario.flow_rate_pps=60.0", "scenario.horizon=120", "scenario.speed_mps=[25.0, 30.0]",
+            f'backend.rehome_overflow="{mode}"'])
+        env = build_env(cfg, run_id="t", build_graph=False)
+        policy = build_policy(cfg, "longest_queue", seed=0)
+        inp = env.reset(4)
+        rehome_drops = 0
+        for _ in range(120):
+            queued = {p.pid for q in env.backend.queues for p in q}
+            nodes = {p.pid: p.node for q in env.backend.queues for p in q}
+            tr = env.step(policy.act([inp])[0].actions)
+            for pid in tr.facts.terminations.get("queue_overflow", []):
+                rehome_drops += pid in queued and pid in nodes and pid not in tr.facts.delivered_ids
+            inp = tr.next_input
+        out[mode] = rehome_drops
+    assert out["exceed"] < out["drop"]
+
+
+def test_route_stagger_and_hop_metrics_conserve_packets():
+    from fanet_next.config import load_config
+    from fanet_next.experiment.assemble import build_env, build_policy
+
+    cfg = load_config("configs/protocol_final.toml", [
+        "scenario.flow_rate_pps=60.0", "scenario.horizon=60", "scenario.speed_mps=[25.0, 30.0]",
+        "backend.route_stagger=true", "backend.routing.update_every=5"])
+    env = build_env(cfg, run_id="t", build_graph=False)
+    policy = build_policy(cfg, "longest_queue", seed=0)
+    inp = env.reset(2)
+    off_phase_rehome = 0
+    for k in range(60):
+        tr = env.step(policy.act([inp])[0].actions)
+        if (k + 1) % 5 != 0:
+            off_phase_rehome += tr.facts.rehomed
+        inp = tr.next_input
+        if tr.end is not EndType.CONTINUE:
+            break
+    s = env.metrics.summary()
+    assert off_phase_rehome > 0  # destinations update on their own phases
+    assert sum(s[f"born_{c}"] for c in ("h1", "h2", "h3p", "hnr")) == s["born"]
+    hop_delivered = sum(round(s[f"delivery_ratio_{c}"] * s[f"born_{c}"]) for c in ("h1", "h2", "h3p", "hnr")
+                        if s[f"born_{c}"])
+    assert hop_delivered == s["delivered"]
+    # staggered by destination: every destination tree is a snapshot, so routes stay loop-free
+    nh, n = env.backend.next_hop, env.backend.sc.num_nodes
+    for d in range(n):
+        for u in range(n):
+            x, steps = u, 0
+            while x != d and nh[x, d] >= 0 and steps <= n:
+                x, steps = int(nh[x, d]), steps + 1
+            assert steps <= n
+
+
+def test_default_backend_counters_are_pinned():
+    """Golden counters of the default environment (recorded before the stage-0 options): any change
+    of the default path shows up here."""
+    from fanet_next.config import load_config
+    from fanet_next.experiment.assemble import build_env, build_policy
+
+    cfg = load_config("configs/protocol_final.toml", ["scenario.flow_rate_pps=40.0", "scenario.horizon=200"])
+    env = build_env(cfg, run_id="golden", build_graph=False)
+    policy = build_policy(cfg, "longest_queue", seed=0)
+    inp = env.reset(11)
+    for _ in range(200):
+        inp = env.step(policy.act([inp])[0].actions).next_input
+    s = env.metrics.summary()
+    got = (s["born"], s["delivered"], s["terminated"], s["rehomed"], s.get("term_queue_overflow", 0))
+    assert got == GOLDEN_DEFAULT
+
+
+GOLDEN_DEFAULT = (2613, 873, 260, 528, 260)  # recorded with commit 23b87f1 (before the stage-0 options)

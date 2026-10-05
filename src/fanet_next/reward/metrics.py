@@ -16,6 +16,14 @@ from .standard import RewardBreakdown
 
 
 ONTIME_DEADLINES_S = (0.5, 1.0, 2.0)
+HOP_CLASSES = (("h1", 1, 1), ("h2", 2, 2), ("h3p", 3, 10 ** 6))  # route length at birth
+
+
+def _hop_class(h: int) -> str:
+    for name, lo, hi in HOP_CLASSES:
+        if lo <= h <= hi:
+            return name
+    return "hnr"  # no route at birth
 
 
 class MetricsAccumulator:
@@ -43,6 +51,9 @@ class MetricsAccumulator:
         self.relay_terminated = 0
         self.radio_events: Counter = Counter()
         self.in_system_end = 0
+        self.born_by_hops: Counter = Counter()
+        self.delivered_by_hops: Counter = Counter()
+        self.delays_by_hops: dict[str, list[float]] = {}
 
     def add(self, facts: CycleFacts, reward: RewardBreakdown, *, n_candidates: int,
             decision_seconds: float, planned_sinr_violations: int) -> None:
@@ -70,6 +81,12 @@ class MetricsAccumulator:
         self.relay_terminated += facts.relay_terminated
         self.radio_events.update(facts.radio_events)
         self.in_system_end = facts.queued_end + facts.waiting_end
+        for h in facts.born_hops0:
+            self.born_by_hops[_hop_class(h)] += 1
+        for h, delay in zip(facts.delivered_hops0, facts.delivered_delays):
+            c = _hop_class(h)
+            self.delivered_by_hops[c] += 1
+            self.delays_by_hops.setdefault(c, []).append(delay)
 
     def summary(self) -> dict[str, float]:
         c = max(self.cycles, 1)
@@ -110,6 +127,17 @@ class MetricsAccumulator:
             out[f"term_{k}"] = v
         for k, v in self.radio_events.items():
             out[f"radio_{k}"] = v
+        # per route length at birth (backends that record it): packets born, delivery ratio, mean
+        # delay and on-time share; every class is always present, NaN when it had no births (so
+        # averages over episodes skip it instead of counting a zero)
+        if self.born_by_hops:
+            for cls in [name for name, _, _ in HOP_CLASSES] + ["hnr"]:
+                n = self.born_by_hops[cls]
+                dl = np.asarray(self.delays_by_hops.get(cls, []))
+                out[f"born_{cls}"] = n
+                out[f"delivery_ratio_{cls}"] = self.delivered_by_hops[cls] / n if n else float("nan")
+                out[f"e2e_delay_mean_s_{cls}"] = float(dl.mean()) if len(dl) else float("nan")
+                out[f"ontime_2s_{cls}"] = float((dl <= 2.0).sum()) / n if n else float("nan")
         return out
 
 

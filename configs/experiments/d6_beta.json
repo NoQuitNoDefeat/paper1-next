@@ -1,0 +1,56 @@
+{
+ "name": "D6 前置：lq_lasthop 的 β 选择（开发种子 16–47，R0 与 R2）",
+ "out": "results/d6/beta",
+ "main": "longest_queue",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 16,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue"
+ ],
+ "groups": {},
+ "controls": {
+  "lq_lasthop_b0.5": {
+   "policy": "{\"type\": \"lq_lasthop\", \"beta\": 0.5}",
+   "set": []
+  },
+  "lq_lasthop_b1.0": {
+   "policy": "{\"type\": \"lq_lasthop\", \"beta\": 1.0}",
+   "set": []
+  },
+  "lq_lasthop_b2.0": {
+   "policy": "{\"type\": \"lq_lasthop\", \"beta\": 2.0}",
+   "set": []
+  }
+ },
+ "scenarios": {
+  "default_R0": [],
+  "default_R2": [
+   "candidates.require_room=true"
+  ],
+  "load_high_R0": [
+   "scenario.flow_rate_pps=[30.0, 45.0]"
+  ],
+  "load_high_R2": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "candidates.require_room=true"
+  ],
+  "nodes24_R0": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ],
+  "nodes24_R2": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "candidates.require_room=true"
+  ]
+ }
+}

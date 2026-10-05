@@ -143,3 +143,14 @@ def test_hold_controls_send_only_allowed_links_and_leave_the_rest_idle(name):
             break
         inp = tr.next_input
     assert held > 0
+
+
+def test_last_hop_share_is_the_share_destined_to_the_receiver():
+    from fanet_next.policy.classical import last_hop_share
+
+    births = [(0.001, 0, 1), (0.002, 0, 2), (0.003, 0, 2), (0.004, 0, 1)]  # queue (0,1): 2 for 1, 2 for 2
+    env = fixed_env(line_positions(3), births, horizon=3)
+    env.reset(0)
+    inp = env.step([]).next_input
+    links = [tuple(l) for l in inp.problem.links]
+    assert last_hop_share(inp)[links.index((0, 1))] == pytest.approx(0.5)

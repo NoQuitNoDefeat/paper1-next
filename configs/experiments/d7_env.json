@@ -1,0 +1,100 @@
+{
+ "name": "D7 环境设定稳健性：路由更新间隔、按目的地错开更新、共享缓存、转队不丢（开发种子 48–79，排空 1000）",
+ "out": "results/d7/env",
+ "main": "主方法",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 48,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2"
+  ]
+ },
+ "scenarios": {
+  "default_E0": [],
+  "default_E1": [
+   "backend.routing.update_every=10"
+  ],
+  "default_E2": [
+   "backend.routing.update_every=50"
+  ],
+  "default_E3": [
+   "backend.route_stagger=true"
+  ],
+  "default_E4": [
+   "backend.buffer=\"shared\"",
+   "backend.node_buffer_packets=256"
+  ],
+  "default_E5": [
+   "backend.rehome_overflow=\"exceed\""
+  ],
+  "load_high_E0": [
+   "scenario.flow_rate_pps=[30.0, 45.0]"
+  ],
+  "load_high_E1": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.routing.update_every=10"
+  ],
+  "load_high_E2": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.routing.update_every=50"
+  ],
+  "load_high_E3": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.route_stagger=true"
+  ],
+  "load_high_E4": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.buffer=\"shared\"",
+   "backend.node_buffer_packets=256"
+  ],
+  "load_high_E5": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.rehome_overflow=\"exceed\""
+  ],
+  "nodes24_E0": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ],
+  "nodes24_E1": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.routing.update_every=10"
+  ],
+  "nodes24_E2": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.routing.update_every=50"
+  ],
+  "nodes24_E3": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.route_stagger=true"
+  ],
+  "nodes24_E4": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.buffer=\"shared\"",
+   "backend.node_buffer_packets=256"
+  ],
+  "nodes24_E5": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.rehome_overflow=\"exceed\""
+  ]
+ }
+}

@@ -22,14 +22,14 @@ def line_positions(n: int, spacing: float = 100.0) -> list[list[float]]:
 
 def fixed_env(positions, births, *, horizon=10, backend=None, interference="full_sinr",
               radio=None, build_graph=True, waiting_max_wait=1.0, waiting_capacity=16,
-              queue_capacity=64, reward=None) -> SchedulingEnv:
+              queue_capacity=64, reward=None, candidates=None) -> SchedulingEnv:
     scenario = {"type": "fixed", "positions": positions, "births": births, "horizon": horizon,
                 "radio": radio or TWO_PACKET_RADIO, "waiting_max_wait": waiting_max_wait,
                 "waiting_capacity": waiting_capacity, "queue_capacity": queue_capacity}
     return SchedulingEnv(
         scenario_source=SCENARIO.build(scenario),
         backend=BACKEND.build(backend or {"type": "lightweight", "routing": {"type": "min_hop", "update_every": 1}}),
-        candidates=CANDIDATES.build("standard"),
+        candidates=CANDIDATES.build(candidates or "standard"),
         constraints=ConstraintSet.from_config({"interference": interference}),
         observation=OBSERVATION.build("standard"),
         reward=REWARD.build(reward or "standard"), build_graph=build_graph, run_id="test")

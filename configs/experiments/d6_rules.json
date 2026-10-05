@@ -1,0 +1,115 @@
+{
+ "name": "D6 规则组合：发包顺序 × 接纳规则，所有策略同一规则（开发种子 48–79，排空 1000）",
+ "out": "results/d6/rules",
+ "main": "主方法",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 48,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure"
+ ],
+ "controls": {
+  "lq_lasthop_bTBD": {
+   "policy": "TBD after d6_beta",
+   "set": []
+  }
+ },
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2"
+  ]
+ },
+ "scenarios": {
+  "default_R0": [],
+  "default_R1": [
+   "backend.service_order=\"fewest_hops\""
+  ],
+  "default_R2": [
+   "candidates.require_room=true"
+  ],
+  "default_R3": [
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true"
+  ],
+  "default_R4": [
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_R5": [
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_R0": [
+   "scenario.flow_rate_pps=[30.0, 45.0]"
+  ],
+  "load_high_R1": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.service_order=\"fewest_hops\""
+  ],
+  "load_high_R2": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "candidates.require_room=true"
+  ],
+  "load_high_R3": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true"
+  ],
+  "load_high_R4": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_R5": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_R0": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ],
+  "nodes24_R1": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.service_order=\"fewest_hops\""
+  ],
+  "nodes24_R2": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "candidates.require_room=true"
+  ],
+  "nodes24_R3": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true"
+  ],
+  "nodes24_R4": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_R5": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ]
+ }
+}

@@ -110,6 +110,8 @@ class CycleFacts:
     relay_terminated: int = 0  # terminated packets that were at a relay (not their source)
     radio_events: dict[str, int] = field(default_factory=dict)  # PHY/MAC trace counts (ns-3)
     terminated_nodes: dict[int, int] = field(default_factory=dict)  # node -> packets terminated there
+    born_hops0: list[int] = field(default_factory=list)  # route length at birth of this cycle's births
+    delivered_hops0: list[int] = field(default_factory=list)  # route length at birth, per delivery
 
     @property
     def terminated_ids(self) -> list[int]:

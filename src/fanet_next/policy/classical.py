@@ -14,6 +14,7 @@ from ..scheduling.maxweight import (_Set, greedy_complete, local_search, max_wei
                                     pairwise_conflicts)
 from ..scheduling.problem import SchedulingProblem
 from .base import POLICY, DecisionOutput, Policy
+from ..scheduling.candidates import admissible_counts
 from .heuristics import _ScoreGreedy, queue_view
 
 WEIGHTS = ("queue", "backpressure")
@@ -60,25 +61,19 @@ def backpressure_weights(inp) -> np.ndarray:
 
 
 def admissible_packets(inp) -> np.ndarray:
-    """For candidate (u, v): queued packets of (u, v) the receiver could admit at decision time:
-    destined to v, or their next queue at v has room (no route at v: room in v's waiting area).
-    Arrivals within the cycle are ignored (decision-time view)."""
+    """For candidate (u, v): queued packets the receiver could admit at decision time
+    (``scheduling.candidates.admissible_counts``)."""
+    return admissible_counts(inp.report, inp.problem.links)
+
+
+def last_hop_share(inp) -> np.ndarray:
+    """For candidate (u, v): share of the queue's packets destined to the receiver v."""
     rep, links = inp.report, inp.problem.links
     if len(links) == 0:
         return np.zeros(0)
-    if rep.queue_dst is None:
-        raise ValueError("needs per-destination queue counts (Report.queue_dst)")
-    qmat = _queue_index(rep)
-    free = rep.queues.capacity - rep.queues.packets
-    wait_free = rep.waiting_capacity - rep.waiting_packets
-    out = np.zeros(len(links))
-    for i, (u, v) in enumerate(links):
-        counts = rep.queue_dst[qmat[u, v]]
-        for d in np.nonzero(counts)[0]:
-            nh = rep.next_hop[v, d]
-            ok = d == v or (free[qmat[v, nh]] > 0 if nh >= 0 else wait_free[v] > 0)
-            out[i] += counts[d] if ok else 0
-    return out
+    q = _queue_index(rep)[links[:, 0], links[:, 1]]
+    counts = rep.queue_dst[q]
+    return counts[np.arange(len(links)), links[:, 1]] / np.maximum(counts.sum(axis=1), 1)
 
 
 def _greedy_allowed(inp, score: np.ndarray, allowed: np.ndarray) -> list[int]:
@@ -170,6 +165,19 @@ class LongestQueueHold(Policy):
     def act(self, inputs, *, mode="sample"):
         return [DecisionOutput(actions=_greedy_allowed(inp, queue_weights(inp), admissible_packets(inp) > 0))
                 for inp in inputs]
+
+
+@POLICY.register("lq_lasthop", role="control")
+class LongestQueueLastHop(_ScoreGreedy):
+    """Stage-0 diagnostic baseline: longest_queue weighted up by the share of the queue's packets
+    destined to the receiver, packets * (1 + beta * share) (ties: older HOL); maximal plans."""
+
+    def __init__(self, beta: float = 1.0):
+        self.beta = float(beta)
+
+    def scores(self, inp):
+        packets, hol = queue_view(inp)
+        return packets * (1.0 + self.beta * last_hop_share(inp)) + 1e-3 * np.minimum(hol, 100.0)
 
 
 @POLICY.register("lq_local_search", role="baseline")

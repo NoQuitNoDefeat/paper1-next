@@ -40,13 +40,14 @@ EPS = 1e-9
 
 class Packet:
     __slots__ = ("pid", "src", "dst", "size", "born", "node", "node_arrived", "enqueued",
-                 "waiting_since", "retries")
+                 "waiting_since", "retries", "hops0")
 
     def __init__(self, pid, src, dst, size, born):
         self.pid, self.src, self.dst, self.size, self.born = pid, src, dst, size, born
         self.node, self.node_arrived = src, born
         self.enqueued = self.waiting_since = None
         self.retries = 0
+        self.hops0 = -1  # route length at birth (-1: no route), for per-hop-class metrics
 
 
 @BACKEND.register("lightweight", role="primary")
@@ -54,13 +55,45 @@ class LightweightBackend(Backend):
     """Python packet-level backend with cumulative-SINR execution."""
 
     supports_state = True
+    # class-level defaults: environments pickled by older code (resumed training) keep working
+    service_order, room_aware_service, buffer, route_stagger = "fifo", False, "per_queue", False
+    node_buffer_packets, rehome_overflow = None, "drop"
 
     def __init__(self, channel: dict | str = "ideal", routing: dict | str = "min_hop",
                  stale_queue_policy: str = "rehome", deadline_s: float | None = None,
                  retry_limit: int | None = None, terminate_when_drained: bool = False,
-                 check_conservation: bool = True):
+                 check_conservation: bool = True, service_order: str = "fifo",
+                 room_aware_service: bool = False, buffer: str = "per_queue",
+                 node_buffer_packets: int | None = None, route_stagger: bool = False,
+                 rehome_overflow: str = "drop"):
+        """Stage-0 diagnostic options (defaults = the method's environment):
+        ``service_order`` "fifo" | "fewest_hops" (a scheduled link sends its packets with the fewest
+        remaining hops from the receiver first, FIFO within a class); ``room_aware_service`` (a
+        packet is sent only if the receiver has room for it at service time: destined to the
+        receiver, or room in its next queue there, counting slots claimed this cycle; claimed
+        packets are admitted first at the cycle end; a route update after service can still
+        redirect them); ``buffer`` "per_queue" (each next-hop queue has its own limit) | "shared"
+        (a node's queues share ``node_buffer_packets``, fixed for the episode; each queue then
+        reports packets + the node's free room as its capacity, so occupancy stays in [0, 1]);
+        ``route_stagger`` (route updates staggered by destination: each cycle the routes towards
+        one group of destinations are recomputed for all nodes from the same snapshot, so every
+        destination tree stays loop-free); ``rehome_overflow`` "drop" | "exceed" (a packet moved
+        to its new next-hop queue after a route update enters it even when the queue is full,
+        isolating the loss mechanism of re-homing)."""
         if stale_queue_policy not in {"rehome", "keep"}:
             raise ValueError("stale_queue_policy must be 'rehome' or 'keep'")
+        if service_order not in {"fifo", "fewest_hops"}:
+            raise ValueError("service_order must be 'fifo' or 'fewest_hops'")
+        if buffer not in {"per_queue", "shared"}:
+            raise ValueError("buffer must be 'per_queue' or 'shared'")
+        if buffer == "shared" and not node_buffer_packets:
+            raise ValueError("buffer 'shared' needs node_buffer_packets")
+        if rehome_overflow not in {"drop", "exceed"}:
+            raise ValueError("rehome_overflow must be 'drop' or 'exceed'")
+        self.service_order, self.room_aware_service = service_order, bool(room_aware_service)
+        self.buffer, self.route_stagger = buffer, bool(route_stagger)
+        self.node_buffer_packets = int(node_buffer_packets) if node_buffer_packets else None
+        self.rehome_overflow = rehome_overflow
         self.channel: ChannelModel = CHANNEL.build(channel)
         self.routing: Routing = ROUTING.build(routing)
         self.stale_queue_policy = stale_queue_policy
@@ -89,6 +122,7 @@ class LightweightBackend(Backend):
         self.qindex = {(int(u), int(v)): q for q, (u, v) in enumerate(self.qlinks)}
         self.qcap = np.asarray(sc.queue_capacity, dtype=np.int64)
         self.queues: list[deque[Packet]] = [deque() for _ in range(len(self.qlinks))]
+        self.node_queues = [np.nonzero(self.qlinks[:, 0] == u)[0] for u in range(n)]
         self.waiting: list[list[Packet]] = [[] for _ in range(n)]
         self.wcap = np.asarray(sc.waiting_capacity, dtype=np.int64)
         self.cycle = 0
@@ -107,13 +141,86 @@ class LightweightBackend(Backend):
         np.fill_diagonal(adjacency, False)
         return self.routing.compute(adjacency, ratio)
 
+    # --------------------------------------------------- routes and buffer room
+    def _route_len(self, a: int, d: int) -> int:
+        """Hops from node ``a`` to ``d`` along the current next-hop table (0 at d, -1: no route)."""
+        x, h, n = a, 0, self.sc.num_nodes
+        while x != d and h < n:
+            nh = int(self.next_hop[x, d])
+            if nh < 0:
+                return -1
+            x, h = nh, h + 1
+        return h if x == d else -1
+
+    def _node_cap(self, u: int) -> int:
+        return int(self.node_buffer_packets)
+
+    def _node_total(self, u: int) -> int:
+        if not hasattr(self, "node_queues"):  # state from older code
+            self.node_queues = [np.nonzero(self.qlinks[:, 0] == v)[0] for v in range(self.sc.num_nodes)]
+        return sum(len(self.queues[q]) for q in self.node_queues[u])
+
+    def _room(self, node: int, q: int) -> tuple[tuple, int]:
+        """(claim key, free slots) for admitting a packet into queue ``q`` at ``node``."""
+        if self.buffer == "shared":
+            return ("n", node), self._node_cap(node) - self._node_total(node)
+        return ("q", q), int(self.qcap[q]) - len(self.queues[q])
+
+    def _admissible_now(self, p: Packet, rx: int, claims: dict) -> bool:
+        if p.dst == rx:
+            return True
+        nh = int(self.next_hop[rx, p.dst])
+        if nh < 0:
+            key, free = ("w", rx), int(self.wcap[rx]) - len(self.waiting[rx])
+        else:
+            key, free = self._room(rx, self.qindex[(rx, nh)])
+        if free - claims.get(key, 0) > 0:
+            claims[key] = claims.get(key, 0) + 1
+            return True
+        return False
+
+    def _select_service(self, queue: deque, rx: int, budget: int, claims: dict) -> list[Packet]:
+        """Packets a successful link sends under the diagnostic service options; the rest keep
+        their order (so the head is still the oldest packet)."""
+        cands = list(queue)
+        order = range(len(cands))
+        if self.service_order == "fewest_hops":
+            rem = {}
+            def key(i):
+                d = cands[i].dst
+                if d not in rem:
+                    r = 0 if d == rx else self._route_len(rx, d)
+                    rem[d] = r if r >= 0 else self.sc.num_nodes + 1
+                return (rem[d], i)
+            order = sorted(order, key=key)
+        picked = []
+        for i in order:
+            p = cands[i]
+            if p.size > budget:
+                break
+            if self.room_aware_service:
+                if not self._admissible_now(p, rx, claims):
+                    continue
+                claims.setdefault("pids", set()).add(p.pid)
+            picked.append(i)
+            budget -= p.size
+        if picked:
+            gone = set(picked)
+            queue.clear()
+            queue.extend(cands[i] for i in range(len(cands)) if i not in gone)
+        return [cands[i] for i in picked]
+
     # ---------------------------------------------------------------- reports
     def _snapshot(self, t: float) -> QueueSnapshot:
         q = len(self.queues)
         packets = np.fromiter((len(d) for d in self.queues), dtype=np.int64, count=q)
         nbytes = np.fromiter((sum(p.size for p in d) for d in self.queues), dtype=np.int64, count=q)
         hol = np.fromiter((t - d[0].enqueued if d else 0.0 for d in self.queues), dtype=float, count=q)
-        return QueueSnapshot(packets, nbytes, self.qcap.copy(), np.maximum(hol, 0.0))
+        cap = self.qcap.copy()
+        if self.buffer == "shared":  # each queue may still grow by the node's free room
+            free = {u: max(self._node_cap(u) - self._node_total(u), 0) for u in range(self.sc.num_nodes)}
+            cap = packets + np.array([free[int(u)] for u in self.qlinks[:, 0]], dtype=np.int64)
+        return QueueSnapshot(packets, nbytes, cap, np.maximum(hol, 0.0))
 
     def _make_report(self) -> Report:
         sc, k = self.sc, self.cycle
@@ -163,7 +270,7 @@ class LightweightBackend(Backend):
         nq = len(self.queues)
         served_p = np.zeros(nq, dtype=np.int64)
         served_b = np.zeros(nq, dtype=np.int64)
-        facts_delivered, facts_delays = [], []
+        facts_delivered, facts_delays, delivered_hops0 = [], [], []
         delivered_bytes = 0
         staged: list[Packet] = []
 
@@ -173,6 +280,7 @@ class LightweightBackend(Backend):
                         self.noise)
         ok = sinr >= self.threshold * (1 - EPS)
         succeeded, failed = [], []
+        claims: dict = {}  # receiver slots claimed this cycle (room_aware_service)
         byte_time = 8.0 / radio.rate_bps
         for (tx, rx), good in zip(links, ok):
             q = self.qindex[(tx, rx)]
@@ -184,8 +292,19 @@ class LightweightBackend(Backend):
                 continue
             succeeded.append((tx, rx))
             budget, t_done = radio.service_bytes, t0
-            while queue and queue[0].size <= budget:
-                p = queue.popleft()
+            if self.service_order != "fifo" or self.room_aware_service:
+                sent = iter(self._select_service(queue, rx, budget, claims))
+            else:
+                sent = None
+            while True:
+                if sent is None:
+                    if not (queue and queue[0].size <= budget):
+                        break
+                    p = queue.popleft()
+                else:
+                    p = next(sent, None)
+                    if p is None:
+                        break
                 budget -= p.size
                 t_done += p.size * byte_time
                 served_p[q] += 1
@@ -193,13 +312,17 @@ class LightweightBackend(Backend):
                 if p.dst == rx:
                     facts_delivered.append(p.pid)
                     facts_delays.append(t_done - p.born)
+                    delivered_hops0.append(getattr(p, "hops0", -1))  # -1 for packets of older state
                     delivered_bytes += p.size
                 else:
                     p.node, p.node_arrived, p.retries = rx, t_done, 0
                     staged.append(p)
         births = sc.births(k)
+        born_hops0 = []
         for b in births:
             p = Packet(self.next_pid, b.src, b.dst, b.size, b.time)
+            p.hops0 = self._route_len(int(b.src), int(b.dst))
+            born_hops0.append(p.hops0)
             self.next_pid += 1
             staged.append(p)
 
@@ -249,9 +372,20 @@ class LightweightBackend(Backend):
 
         # 4. routing update, stale queues
         rehomed = 0
+        rehomed_ids: set[int] = set()
         pending: list[tuple[Packet, bool]] = [(p, False) for p in staged]
-        if (k + 1) % self.routing.update_every == 0:
+        updated = None  # nodes whose routes changed this cycle (None: none)
+        if self.route_stagger:
+            per, n = self.routing.update_every, self.sc.num_nodes
+            dests = [d for d in range(n) if (k + 1 + (d * per) // n) % per == 0]
+            if dests:
+                new = self._compute_routes(k + 1)
+                self.next_hop[:, dests] = new[:, dests]
+                updated = set(dests)
+        elif (k + 1) % self.routing.update_every == 0:
             self.next_hop = self._compute_routes(k + 1)
+            updated = range(self.sc.num_nodes)
+        if updated is not None:
             if self.stale_queue_policy == "rehome":
                 for i, queue in enumerate(self.queues):
                     u, v = self.qlinks[i]
@@ -260,11 +394,16 @@ class LightweightBackend(Backend):
                         self.queues[i] = deque(p for p in queue if self.next_hop[u, p.dst] == v)
                         pending += [(p, False) for p in stale]
                         rehomed += len(stale)
+                        rehomed_ids.update(p.pid for p in stale)
         for w in self.waiting:
             pending += [(p, True) for p in w if self.next_hop[p.node, p.dst] >= 0]
 
         # 5. admission in (node arrival, id) order
-        pending.sort(key=lambda e: (e[0].node_arrived, e[0].pid))
+        if self.room_aware_service and claims.get("pids"):  # packets sent into claimed room first
+            first = claims["pids"]
+            pending.sort(key=lambda e: (e[0].pid not in first, e[0].node_arrived, e[0].pid))
+        else:
+            pending.sort(key=lambda e: (e[0].node_arrived, e[0].pid))
         moved_to_waiting = restored = 0
         for p, from_waiting in pending:
             nh = int(self.next_hop[p.node, p.dst])
@@ -272,7 +411,9 @@ class LightweightBackend(Backend):
                 q = self.qindex.get((p.node, nh))
                 if q is None:
                     raise ExecutionError(f"route {p.node}->{nh} points to an unregistered queue")
-                if len(self.queues[q]) < self.qcap[q]:
+                if ((len(self.queues[q]) < self.qcap[q] if self.buffer == "per_queue"
+                        else self._node_total(p.node) < self._node_cap(p.node))
+                        or (self.rehome_overflow == "exceed" and p.pid in rehomed_ids)):
                     if from_waiting:
                         self.waiting[p.node].remove(p)
                         restored += 1
@@ -308,7 +449,7 @@ class LightweightBackend(Backend):
             terminations=dict(term), queued_end=queued1, waiting_end=waiting1,
             waiting_post_service=waiting_post, moved_to_waiting=moved_to_waiting,
             restored_from_waiting=restored, rehomed=rehomed, relay_terminated=relay_terminated,
-            terminated_nodes=dict(term_nodes))
+            terminated_nodes=dict(term_nodes), born_hops0=born_hops0, delivered_hops0=delivered_hops0)
 
         self.cycle = k + 1
         self.report = self._make_report()

@@ -44,6 +44,7 @@ import numpy as np
 
 from confirm import ROOT
 from critic_counterfactual import _setup
+from fanet_next.config import apply_override
 from fanet_next.experiment.assemble import build_env, build_policy
 from fanet_next.loop import EndType
 
@@ -79,13 +80,13 @@ def _rollout(env, policy, plan, seed: int, scale: float, gamma: float, weights: 
         actions = None
 
 
-def reach_state(cfg, policy, idx: int, base: int = DEV_BASE, prefix: str = "d3"):
-    """Run the policy (sampling) to a random cycle t0 in [60, 150] of dev scene ``base + idx``.
-    Returns (env, rng, t0), or None when the episode ended first."""
+def reach_state(cfg, policy, idx: int, base: int = DEV_BASE, prefix: str = "d3", t0_range=(60, 150)):
+    """Run the policy (sampling) to a random cycle t0 in ``t0_range`` (inclusive; default [60, 150])
+    of dev scene ``base + idx``.  Returns (env, rng, t0), or None when the episode ended first."""
     rng = np.random.default_rng(1_000 + idx)
     env = build_env(cfg, run_id=f"{prefix}-{idx}")
     env.reset(base + idx, episode=idx)
-    t0 = int(rng.integers(60, 151))
+    t0 = int(rng.integers(t0_range[0], t0_range[1] + 1))
     policy.generator.manual_seed(800_000 + idx)
     for _ in range(t0):  # reach the state with the policy itself
         tr = env.step(list(policy.act([env.current], mode="sample")[0].actions))
@@ -129,9 +130,12 @@ def candidate_plans(env, policy, cfg, idx: int, rng, k_samples: int, m_policy: i
 
 
 def probe_state(args) -> dict | None:
-    run, idx, k_samples, m_policy, reps, horizon = args
+    run, idx, k_samples, m_policy, reps, horizon, *rest = args
+    t0_range, base, sets = rest if rest else ((60, 150), DEV_BASE, [])
     cfg, policy, scale, gamma = _setup(run)
-    reached = reach_state(cfg, policy, idx)
+    for item in sets:
+        apply_override(cfg, item)
+    reached = reach_state(cfg, policy, idx, base=base, t0_range=t0_range)
     if reached is None:
         return None
     env, rng, t0 = reached
@@ -274,20 +278,29 @@ def main() -> None:
     ap.add_argument("--horizon", type=int, default=max(STEPS))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--summary-only", action="store_true", help="re-analyse an existing output")
+    ap.add_argument("--t0-min", type=int, default=60, help="earliest cycle of the probed states")
+    ap.add_argument("--t0-max", type=int, default=150, help="latest cycle of the probed states")
+    ap.add_argument("--base", type=int, default=DEV_BASE, help="first dev scene seed")
+    ap.add_argument("--set", action="append", default=[], help="override, e.g. scenario.flow_rate_pps=[30.0,45.0]")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
+    design = {"t0_range": [a.t0_min, a.t0_max], "base": a.base, "sets": a.set}
+    if (a.t0_min, a.t0_max, a.base, a.set) != (60, 150, DEV_BASE, []) and not a.out:
+        raise SystemExit("non-default design: give --out so the D3 outputs are not overwritten")
     out = Path(a.out) if a.out else ROOT / "results/diagnostics" / f"d3_{Path(a.run).name}.json"
     if a.summary_only:
         data = json.loads(out.read_text())
         states, gamma = data["states"], data["gamma"]
     else:
-        jobs = [(a.run, i, a.samples, a.policy_plans, a.reps, a.horizon) for i in range(a.states)]
+        jobs = [(a.run, i, a.samples, a.policy_plans, a.reps, a.horizon, (a.t0_min, a.t0_max), a.base, a.set)
+                for i in range(a.states)]
         with Pool(a.workers) as pool:
             states = [s for s in pool.map(probe_state, jobs, chunksize=1) if s is not None]
         gamma = _setup(a.run)[3]
     summary = summarise(states, gamma)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"run": a.run, "gamma": gamma, "summary": summary, "states": states}))
+    out.write_text(json.dumps({"run": a.run, "gamma": gamma, "design": design, "summary": summary,
+                               "states": states}))
     print(json.dumps(summary, indent=1))
 
 

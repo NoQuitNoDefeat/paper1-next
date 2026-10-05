@@ -57,3 +57,29 @@ def test_imitation_env_count_keeps_the_imitation_start(tmp_path):
     assert ea["records"] == eb["records"] and ea["return_scale"] == eb["return_scale"]
     for (ka, va), (kb, vb) in zip(a.model.state_dict().items(), b.model.state_dict().items()):
         assert ka == kb and torch.equal(va, vb)
+
+
+def test_environment_state_from_older_code_still_steps():
+    """Training resumes restore pickled environments: a backend without the stage-0 attributes and
+    packets without hops0 (state written by older code) must keep working."""
+    from fanet_next.config import load_config
+    from fanet_next.experiment.assemble import build_env, build_policy
+
+    cfg = load_config("configs/protocol_final.toml", ["scenario.flow_rate_pps=40.0", "scenario.horizon=80"])
+    env = build_env(cfg, run_id="old", build_graph=False)
+    policy = build_policy(cfg, "longest_queue", seed=0)
+    inp = env.reset(3)
+    for _ in range(30):
+        inp = env.step(policy.act([inp])[0].actions).next_input
+    b = env.backend
+    for attr in ("service_order", "room_aware_service", "buffer", "route_stagger", "node_queues"):
+        b.__dict__.pop(attr, None)
+    for q in b.queues:
+        for p in q:
+            try:
+                del p.hops0
+            except AttributeError:
+                pass
+    for _ in range(30):
+        inp = env.step(policy.act([inp])[0].actions).next_input
+    assert b.totals["born"] == b.totals["delivered"] + b.totals["terminated"] + sum(b.in_system())
