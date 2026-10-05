@@ -1,0 +1,24 @@
+{
+ "name": "E19 每次迭代 4 倍数据（梯度步数不变）",
+ "runs": "results/e19/runs/{kind}-s{seed}",
+ "scenarios": {
+  "base": {}
+ },
+ "kinds": {
+  "data4x": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e19_data4x.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 4.0,
+   "mem_gb": 4.0,
+   "priority": 0
+  }
+ }
+}

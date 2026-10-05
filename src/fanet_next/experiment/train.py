@@ -186,10 +186,13 @@ class TrainingRun:
         from .assemble import build_policy
 
         icfg = {"teacher": "longest_queue", "cycles": 500, "epochs": 6, "lr": 1e-3,
-                "minibatch": 256, **self.cfg["imitation"]}
+                "minibatch": 256, "num_envs": None, **self.cfg["imitation"]}
         t0 = time.perf_counter()
         teacher = build_policy(self.cfg, icfg["teacher"], seed=self.seed)
-        envs = [build_env(self.cfg, run_id=f"imitate-env{e}") for e in range(len(self.envs))]
+        # imitation.num_envs (default: the training env count) lets a run with more PPO
+        # environments keep exactly the same imitation data and start (E19)
+        n_imit = int(icfg["num_envs"]) if icfg["num_envs"] else len(self.envs)
+        envs = [build_env(self.cfg, run_id=f"imitate-env{e}") for e in range(n_imit)]
         base = TRAIN_SEED_BASE + 100_000 * self.seed + 50_000
         records = teacher_records(envs, teacher, [base + e for e in range(len(envs))],
                                   int(icfg["cycles"]), self.tcfg["gamma"])

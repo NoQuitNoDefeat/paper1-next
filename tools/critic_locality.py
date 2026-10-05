@@ -45,6 +45,7 @@ import numpy as np
 
 from confirm import ROOT
 from critic_consequence import _setup, candidate_plans, reach_state
+from fanet_next.config import apply_override, load_config
 from fanet_next.loop import EndType
 
 DEV_BASE = 10_000_000 + 700  # dev scenes beyond selection, ablation, D2 (500-539) and D3 (600-647)
@@ -108,9 +109,29 @@ def _rollout_nodes(env, policy, plan, seed: int, scale: float, gamma: float):
         actions = None
 
 
+def _override(cfg: dict, scenario: str | None, sets: list[str]) -> dict:
+    """Optional other scenario family for the same checkpoint (as ``fanet-next eval``):
+    the scenario section of ``scenario``, then ``key=value`` overrides."""
+    if scenario:
+        cfg["scenario"] = load_config(scenario)["scenario"]
+    for item in sets:
+        apply_override(cfg, item)
+    return cfg
+
+
+def connectivity(hops: np.ndarray) -> dict:
+    n = len(hops)
+    off = ~np.eye(n, dtype=bool)
+    reach = hops[off] > 0
+    return {"mean_degree": float((hops == 1).sum(1).mean()),
+            "mean_hops": float(hops[off][reach].mean()) if reach.any() else float("nan"),
+            "unreachable_pairs": float(1 - reach.mean())}
+
+
 def probe_state(args) -> dict | None:
-    run, idx, k_samples, m_policy, reps = args
+    run, idx, k_samples, m_policy, reps, scenario, sets = args
     cfg, policy, scale, gamma = _setup(run)
+    cfg = _override(cfg, scenario, sets)
     reached = reach_state(cfg, policy, idx, base=DEV_BASE, prefix="d5")
     if reached is None:
         return None
@@ -118,8 +139,9 @@ def probe_state(args) -> dict | None:
     plans, v0, n_sampled = candidate_plans(env, policy, cfg, idx, rng, k_samples, m_policy)
     rep = env.current.report
     cand = env.current.problem.links
-    res = {"index": idx, "t0": t0, "num_nodes": int(rep.num_nodes), "hops": hop_matrix(rep).tolist(),
-           "plans": []}
+    hops = hop_matrix(rep)
+    res = {"index": idx, "t0": t0, "num_nodes": int(rep.num_nodes), "hops": hops.tolist(),
+           "connectivity": connectivity(hops), "plans": []}
     downstream = {}
     for key, p in plans.items():
         links = [tuple(int(x) for x in cand[a]) for a in p["order"]]
@@ -241,7 +263,9 @@ def bootstrap(blocks, fn, n=500, seed=0) -> list[float]:
 
 def summarise(states: list[dict]) -> dict:
     blocks = pair_stats(states)
+    conn = [s["connectivity"] for s in states if "connectivity" in s]
     out = {"states": len(states), "states_with_pairs": len(blocks), "pairs": sum(len(b) for b in blocks),
+           "connectivity": {k: float(np.nanmean([c[k] for c in conn])) for k in conn[0]} if conn else {},
            "ring_shares": group_shares(blocks, "rings", RINGS),
            "route_shares": group_shares(blocks, "route", ROUTE),
            "ring_magnitudes": group_magnitudes(blocks, "rings", RINGS),
@@ -268,22 +292,26 @@ def main() -> None:
     ap.add_argument("--reps", type=int, default=12)
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--summary-only", action="store_true", help="pool existing outputs of the runs")
+    ap.add_argument("--scenario", help="replace the scenario section with this config file's (D5b)")
+    ap.add_argument("--set", action="append", default=[], help="override, e.g. scenario.num_nodes=24")
+    ap.add_argument("--tag", default="", help="suffix of the output files for another scenario family")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
+    suffix = f"_{a.tag}" if a.tag else ""
     all_states = []
     for run in a.runs:
-        path = ROOT / "results/diagnostics" / f"d5_{Path(run).name}.json"
+        path = ROOT / "results/diagnostics" / f"d5_{Path(run).name}{suffix}.json"
         if a.summary_only:
             all_states += json.loads(path.read_text())["states"]
             continue
-        jobs = [(run, i, a.samples, a.policy_plans, a.reps) for i in range(a.states)]
+        jobs = [(run, i, a.samples, a.policy_plans, a.reps, a.scenario, a.set) for i in range(a.states)]
         with Pool(a.workers) as pool:
             states = [s for s in pool.map(probe_state, jobs, chunksize=1) if s is not None]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"run": run, "summary": summarise(states), "states": states}))
         all_states += states
     summary = summarise(all_states)
-    out = Path(a.out) if a.out else ROOT / "results/diagnostics" / "d5_summary.json"
+    out = Path(a.out) if a.out else ROOT / "results/diagnostics" / f"d5_summary{suffix}.json"
     out.write_text(json.dumps({"runs": a.runs, "summary": summary}, indent=1))
     print(json.dumps(summary, indent=1))
 
