@@ -163,3 +163,20 @@ def test_sequence_and_step_ratio_give_the_same_first_gradient_with_a_shared_adva
         ppo.update(res.records)
         grads.append(torch.cat([p.grad.flatten() for p in model.parameters() if p.grad is not None]))
     assert torch.allclose(grads[0], grads[1], atol=1e-6, rtol=1e-4)
+
+
+def test_scaler_update_envs_restricts_the_statistics_not_the_normalisation():
+    """update_envs (E20 U4): only the first streams update the running scale; all are normalised."""
+    import numpy as np
+
+    full, part = ReturnScaler(4, 0.9), ReturnScaler(4, 0.9, update_envs=2)
+    ref = ReturnScaler(2, 0.9)
+    rng = np.random.default_rng(0)
+    for _ in range(50):
+        r = rng.normal(size=4)
+        outs = [part(e, float(r[e]), False) for e in range(4)]
+        [full(e, float(r[e]), False) for e in range(4)]
+        [ref(e, float(r[e]), False) for e in range(2)]
+        assert part.scale == ref.scale  # same statistics as a 2-stream run
+        assert np.allclose(outs[2:], np.clip(r[2:] / np.sqrt(part.rms.var + part.eps), -10, 10))
+    assert part.scale != full.scale

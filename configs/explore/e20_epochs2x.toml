@@ -1,0 +1,6 @@
+# E20 臂 U2（探索，2026-10-05，不替代定稿配置）：原数据量，PPO 轮数 ×2（4 → 8），每次迭代的梯度步数 ×2。
+extends = "../protocol_final.toml"
+name = "e20-epochs2x"
+
+[trainer]
+epochs = 8

@@ -1,0 +1,10 @@
+# E20 臂 U3（探索，2026-10-05，不替代定稿配置）：4 倍数据，小批量不变（256 个周期），
+# 每次迭代的梯度步数 ×4（16 → 64），每步的样本量与定稿方法相同。模仿起点与定稿方法逐位相同。
+extends = "../protocol_final.toml"
+name = "e20-data4x-steps4x"
+
+[training]
+num_envs = 32
+
+[imitation]
+num_envs = 8

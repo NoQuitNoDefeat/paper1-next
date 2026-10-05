@@ -30,7 +30,8 @@ TRAINING_DEFAULTS = dict(
     reward_norm=True, lr=3e-4, lr_final=None, eval_every=10, eval_episodes=8,
     checkpoint_every=10, keep_every=50, threads=1, device="cpu", eval_drain_cycles=0,
     credit="step",  # "flat" / "cycle" (E17), "none" (E18): training.advantages.compute_stream_advantages
-    adv_lambda=None)  # lambda of the actor's advantages when it differs from gae_lambda (E18)
+    adv_lambda=None,  # lambda of the actor's advantages when it differs from gae_lambda (E18)
+    reward_norm_envs=None)  # environments that update the reward scale (default all; E20 U4)
 
 
 def seed_everything(seed: int) -> None:
@@ -53,7 +54,8 @@ class TrainingRun:
         self.policy = LearnedPolicy(self.model, device=t["device"], seed=self.seed + 100_000)
         self.envs = [build_env(cfg, run_id=f"train-env{e}") for e in range(int(t["num_envs"]))]
         self.manifest = check_compatibility(self.envs[0], self.policy)
-        self.scaler = ReturnScaler(len(self.envs), t["gamma"], enabled=bool(t["reward_norm"]))
+        self.scaler = ReturnScaler(len(self.envs), t["gamma"], enabled=bool(t["reward_norm"]),
+                                   update_envs=t["reward_norm_envs"])
         self.collector = RolloutCollector(
             self.envs, self.policy, seeds=SeedStream(TRAIN_SEED_BASE + 100_000 * self.seed),
             scaler=self.scaler, rollout_cycles=int(t["rollout_cycles"]))

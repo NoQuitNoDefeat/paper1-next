@@ -32,17 +32,21 @@ class ReturnScaler:
     """r / std(discounted return), tracked per environment stream."""
 
     def __init__(self, num_envs: int, gamma: float, enabled: bool = True, eps: float = 1e-8,
-                 clip: float = 10.0):
+                 clip: float = 10.0, update_envs: int | None = None):
         self.enabled = enabled
         self.gamma, self.eps, self.clip = gamma, eps, clip
         self.ret = np.zeros(num_envs)
         self.rms = RunningMeanStd()
+        # only streams 0..update_envs-1 update the running statistics (all are normalised): a run
+        # with more environments can keep the scale's update process of a smaller run (E20 U4)
+        self.update_envs = num_envs if update_envs is None else int(update_envs)
 
     def __call__(self, env: int, reward: float, episode_end: bool) -> float:
         if not self.enabled:
             return reward
         self.ret[env] = self.ret[env] * self.gamma + reward
-        self.rms.update(np.array([self.ret[env]]))
+        if env < self.update_envs:
+            self.rms.update(np.array([self.ret[env]]))
         if episode_end:
             self.ret[env] = 0.0
         return float(np.clip(reward / np.sqrt(self.rms.var + self.eps), -self.clip, self.clip))

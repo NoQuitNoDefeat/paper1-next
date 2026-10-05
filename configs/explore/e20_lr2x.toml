@@ -1,0 +1,6 @@
+# E20 臂 U1（探索，2026-10-05，不替代定稿配置）：原数据量，学习率 ×2（1e-4 → 2e-4）。
+extends = "../protocol_final.toml"
+name = "e20-lr2x"
+
+[training]
+lr = 2e-4

@@ -1,0 +1,7 @@
+# E20 臂 U4（探索，2026-10-05，不替代定稿配置）：同 E19（4 倍数据，梯度步数不变），
+# 但奖励尺度只用前 8 个环境的数据更新，尺度的更新过程在统计上与定稿方法相同。
+extends = "e19_data4x.toml"
+name = "e20-data4x-scale8"
+
+[training]
+reward_norm_envs = 8

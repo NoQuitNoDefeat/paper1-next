@@ -1,0 +1,61 @@
+{
+ "name": "E20 开发集比较：更新预算与尺度对照（开发种子 16–47，排空 1000）",
+ "out": "results/e20/dev",
+ "main": "主方法",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 16,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "default": [],
+  "load_high": [
+   "scenario.flow_rate_pps=[30.0, 45.0]"
+  ],
+  "nodes24_same_density": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ]
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue"
+ ],
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2"
+  ],
+  "E19·4倍数据": [
+   "results/e19/runs/data4x-s0",
+   "results/e19/runs/data4x-s1",
+   "results/e19/runs/data4x-s2"
+  ],
+  "U1·学习率×2": [
+   "results/e20/runs/lr2x-s0",
+   "results/e20/runs/lr2x-s1",
+   "results/e20/runs/lr2x-s2"
+  ],
+  "U2·轮数×2": [
+   "results/e20/runs/epochs2x-s0",
+   "results/e20/runs/epochs2x-s1",
+   "results/e20/runs/epochs2x-s2"
+  ],
+  "U3·4倍数据4倍步数": [
+   "results/e20/runs/data4x_steps4x-s0",
+   "results/e20/runs/data4x_steps4x-s1",
+   "results/e20/runs/data4x_steps4x-s2"
+  ],
+  "U4·4倍数据同步尺度": [
+   "results/e20/runs/data4x_scale8-s0",
+   "results/e20/runs/data4x_scale8-s1",
+   "results/e20/runs/data4x_scale8-s2"
+  ]
+ }
+}

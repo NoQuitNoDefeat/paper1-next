@@ -1,0 +1,69 @@
+{
+ "name": "E20 更新能走多远：学习率 ×2、轮数 ×2、4 倍数据配 4 倍步数、4 倍数据配同步尺度",
+ "runs": "results/e20/runs/{kind}-s{seed}",
+ "scenarios": {
+  "base": {}
+ },
+ "kinds": {
+  "lr2x": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e20_lr2x.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.0,
+   "mem_gb": 1.6,
+   "priority": 0
+  },
+  "epochs2x": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e20_epochs2x.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.6,
+   "mem_gb": 1.6,
+   "priority": 0
+  },
+  "data4x_steps4x": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e20_data4x_steps4x.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 4.0,
+   "mem_gb": 4.0,
+   "priority": 0
+  },
+  "data4x_scale8": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e20_data4x_scale8.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 4.0,
+   "mem_gb": 4.0,
+   "priority": 0
+  }
+ }
+}
