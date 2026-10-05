@@ -95,7 +95,7 @@
 | 用了哪些公开数据、怎样用 | `docs/data-screening.md` 第 1、7 节；`data/sources.json` |
 | 结果 | 先看第 2 节速览，再按 `docs/experiments.md` 开头的索引找各实验的“结果”小节 |
 | 局限与待办 | `docs/known-issues.md` |
-| 现有方案限制了哪些取舍、可能的扩展（供讨论） | `docs/design-review.md` |
+| 现有方案限制了哪些取舍、长期目标与探索路线（供讨论） | `docs/design-review.md`，第 11 节为长期目标与路线 |
 
 **主方法的代码路径**（均在 `src/fanet_next/` 下）：
 
