@@ -310,10 +310,26 @@ def drops() -> dict | None:
     return res
 
 
+def make_d8_confirm() -> None:
+    """Write configs/experiments/d8_confirm.json: the delivery-first checkpoints on dev offset 48 (R0)."""
+    sel = d8()
+    if sel is None:
+        raise SystemExit("d8_select results are incomplete")
+    src = json.loads((ROOT / "configs/experiments/d8_select.json").read_text())
+    chosen = {sel["selected"][r]["delivery_first"]: src["fixed"][sel["selected"][r]["delivery_first"]] for r in MAIN}
+    spec = {**src, "name": "D8 复核：交付率优先选出的检查点（开发种子 48–79，排空 1000）", "out": "results/d8/confirm",
+            "eval": {**src["eval"], "seed_offset": 48}, "fixed": chosen, "main": next(iter(chosen))}
+    (ROOT / "configs/experiments/d8_confirm.json").write_text(json.dumps(spec, indent=1, ensure_ascii=False) + "\n")
+    print("delivery-first checkpoints", chosen)
+
+
 def main() -> None:
     import sys
     if "--apply-beta" in sys.argv:
         apply_beta()
+        return
+    if "--make-d8-confirm" in sys.argv:
+        make_d8_confirm()
         return
     out = {"beta": beta(), "d6": d6(), "d7": d7(), "d8": d8(), "d3c": d3c(), "drops": drops()}
     path = ROOT / "results/stage0/analysis.json"
