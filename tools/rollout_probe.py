@@ -12,7 +12,11 @@ Every cycle of an episode (traffic and drain):
    ``horizon - 1`` cycles; ``reps`` repetitions per candidate, every candidate sees the same
    channel randomness in the same repetition (common random numbers);
 3. score = deliveries in the window - eps * total delay of those deliveries (delivery first, delay
-   second); the best mean score is executed in the real episode.
+   second); the best mean score is executed in the real episode.  ``--score window`` (S1b) counts
+   every delivery inside a window of ``horizon`` cycles; it leaves the backlog at the window end
+   free, which favours holding back (S1b found this bias).  ``--score cohort`` (S1c) counts only
+   the packets in the system at the decision plus those born in the next ``horizon`` cycles, over
+   ``2 * horizon`` cycles, so every counted packet has met its fate (deadline) inside the window.
 
 With a deadline D and horizon >= D / cycle, every packet present at the decision has met its fate
 inside the window, so the score covers the consequences for them; later births are the same in
@@ -68,13 +72,27 @@ def _plans(env, base, others) -> dict[str, tuple]:
     return uniq
 
 
-def _score(env, plan, base, horizon: int, eps: float) -> float:
+def _score(env, plan, base, horizon: int, eps: float, mode: str = "window") -> float:
+    be = env.backend
+    if mode == "cohort":
+        cohort = {p.pid for q in be.queues for p in q} | {p.pid for w in be.waiting for p in w}
+        first_new, steps = be.next_pid, 2 * horizon
+    else:
+        steps = horizon
     delivered, delay = 0, 0.0
     tr = env.step(list(plan))
-    for i in range(horizon):
-        delivered += len(tr.facts.delivered_ids)
-        delay += float(sum(tr.facts.delivered_delays))
-        if tr.end is not EndType.CONTINUE or i == horizon - 1:
+    for i in range(steps):
+        if mode == "cohort":
+            if i == horizon:
+                last_new = be.next_pid  # births of the first horizon cycles belong to the cohort
+            for pid, dl in zip(tr.facts.delivered_ids, tr.facts.delivered_delays):
+                if pid in cohort or (pid >= first_new and (i < horizon or pid < last_new)):
+                    delivered += 1
+                    delay += float(dl)
+        else:
+            delivered += len(tr.facts.delivered_ids)
+            delay += float(sum(tr.facts.delivered_delays))
+        if tr.end is not EndType.CONTINUE or i == steps - 1:
             break
         tr = env.step(base.act([env.current], mode="greedy")[0].actions)
     return delivered - eps * delay
@@ -105,7 +123,7 @@ def episode(args) -> dict:
                         for k, p in cands.items():
                             clone = copy.deepcopy(env)
                             clone.backend.rng = np.random.default_rng([seed, int(env.backend.cycle), r])
-                            scores[k] += _score(clone, p, base, a.horizon, a.eps)
+                            scores[k] += _score(clone, p, base, a.horizon, a.eps, a.score)
                     best = max(scores, key=lambda k: (scores[k], k == "base"))
                     plan = cands[best]
                     chosen[best] += 1
@@ -131,6 +149,7 @@ def main() -> None:
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--eps", type=float, default=1e-3, help="weight of delay (s) against one delivery")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--score", default="window", choices=["window", "cohort"])
     ap.add_argument("--set", action="append", default=[])
     a = ap.parse_args()
     cycle = float(load_config(str(ROOT / "configs/protocol_final.toml"))["scenario"]["cycle_length"])
@@ -143,6 +162,7 @@ def main() -> None:
     t = np.array([r["rollout"]["e2e_delay_mean_s"] - r["base"]["e2e_delay_mean_s"] for r in rows])
     se = d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float("nan")
     out = {"family": a.family, "base": a.base, "rules": a.rules, "deadline": a.deadline, "horizon": a.horizon,
+           "score": a.score,
            "reps": a.reps, "eps": a.eps, "episodes": a.episodes, "seed_offset": a.seed_offset, "sets": a.set,
            "delivery_gain": {"mean": float(d.mean()), "se": float(se)}, "delay_change_s": float(t.mean()),
            "base_delivery": float(np.mean([r["base"]["delivery_ratio"] for r in rows])),
