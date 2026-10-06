@@ -73,7 +73,26 @@ class Trunk(nn.Module):
         z = self.lift(h[b.cand_tx], h[b.cand_rx], b.cand_x)
         z = self.inter(z, b.inter_index, b.inter_x)
         ctx = self.readout(h, b.node_graph, b.num_graphs, b.global_x)
+        self.last_nodes = h  # node embeddings, read by the privileged critic path (E21)
         return b.pad_candidates(z), ctx
+
+
+class PrivilegedContext(nn.Module):
+    """E21 critic-only context: node embeddings joined with privileged node features, pooled
+    (mean and max) and projected to the context size; the last layer starts at zero, so the
+    critic starts exactly as without it."""
+
+    def __init__(self, node_dim: int, priv_dim: int, hidden: int):
+        super().__init__()
+        self.node = nn.Sequential(nn.Linear(node_dim + priv_dim, hidden), nn.ReLU(), nn.Linear(hidden, hidden), nn.ReLU())
+        self.out = nn.Linear(2 * hidden, hidden)
+        nn.init.zeros_(self.out.weight)
+        nn.init.zeros_(self.out.bias)
+
+    def forward(self, h, px, node_graph, num_graphs):
+        from .layers import scatter_max, scatter_mean
+        u = self.node(torch.cat([h, px], -1))
+        return self.out(torch.cat([scatter_mean(u, node_graph, num_graphs), scatter_max(u, node_graph, num_graphs)], -1))
 
 
 @MODEL.register("dual_graph", role="primary")
@@ -95,7 +114,8 @@ class DualGraphModel(SchedulingModel):
                  comm_encoder: dict | str = "mpnn", lift: dict | str = "concat",
                  interaction_encoder: dict | str = "mpnn", set_summary: dict | str = "gated_sum",
                  critic_set_summary: dict | str | None = None,
-                 actor_head: dict | str = "mlp", critic_head: dict | str = "mlp"):
+                 actor_head: dict | str = "mlp", critic_head: dict | str = "mlp",
+                 privileged_dim: int = 0):
         super().__init__()
         self.schema = schema
         self.share_trunk = share_trunk
@@ -115,10 +135,22 @@ class DualGraphModel(SchedulingModel):
         self.dyn_actor = nn.Linear(CANDIDATE_FEATURE_DIM, hidden) if candidate_dynamics else None
         self.dyn_critic = (None if not candidate_dynamics else
                            self.dyn_actor if share_trunk else nn.Linear(CANDIDATE_FEATURE_DIM, hidden))
+        # E21: a critic-only path for training-time privileged node features.  Built last and from
+        # a forked generator, so every other parameter and the global random stream are unchanged.
+        self.privileged_dim = int(privileged_dim)
+        self.priv = None
+        if self.privileged_dim > 0:
+            with torch.random.fork_rng():
+                torch.manual_seed(2_100_021)
+                self.priv = PrivilegedContext(self.actor_trunk.comm.out_dim, self.privileged_dim, hidden)
 
     def encode(self, batch: GraphBatch) -> Encoding:
         za, ca = self.actor_trunk(batch)
         zc, cc = (za, ca) if self.share_trunk else self.critic_trunk(batch)
+        if self.priv is not None:  # only the critic's context sees the privileged features
+            h = self.critic_trunk.last_nodes
+            px = batch.priv_node_x if batch.priv_node_x is not None else h.new_zeros(h.shape[0], self.privileged_dim)
+            cc = cc + self.priv(h, px, batch.node_graph, batch.num_graphs)
         return Encoding(za, zc, ca, cc, batch.cand_valid())
 
     def init_state(self, enc: Encoding):

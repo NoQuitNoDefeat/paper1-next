@@ -1,0 +1,10 @@
+# E21 臂 P2（探索，2026-10-06）：与 P1 结构相同（评论者多一路网络），但特权特征全为 0。
+# 用来区分“多了一路网络”和“看到了未来到达”的作用。
+extends = "../protocol_final.toml"
+name = "e21-placebo"
+
+[model]
+privileged_dim = 6
+
+[training]
+privileged_critic = { bins = [10, 30, 100], placebo = true }

@@ -85,6 +85,7 @@ def reach_state(cfg, policy, idx: int, base: int = DEV_BASE, prefix: str = "d3",
     of dev scene ``base + idx``.  Returns (env, rng, t0), or None when the episode ended first."""
     rng = np.random.default_rng(1_000 + idx)
     env = build_env(cfg, run_id=f"{prefix}-{idx}")
+    env.privileged = cfg.get("training", {}).get("privileged_critic")  # E21: the critic's training input
     env.reset(base + idx, episode=idx)
     t0 = int(rng.integers(t0_range[0], t0_range[1] + 1))
     policy.generator.manual_seed(800_000 + idx)

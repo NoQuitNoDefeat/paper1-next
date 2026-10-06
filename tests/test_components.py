@@ -187,3 +187,47 @@ def test_switch_backend_keeps_environment_parameters():
     assert switched["backend"]["motion"] is False
     cleared = load_config("configs/protocol_final.toml", ["backend.type=\"ns3\""])
     assert "routing" not in cleared["backend"]
+
+
+def test_future_load_counts_originated_and_relayed_arrivals():
+    from fanet_next.observation.privileged import future_load
+    from helpers import fixed_env, line_positions
+    env = fixed_env(line_positions(3), [(0.005, 0, 2), (0.011, 1, 2)], horizon=10)
+    inp = env.reset(0)
+    f = future_load(env.backend.sc, inp.report, bins=(10, 30))
+    assert f.shape == (3, 4)
+    assert f[0, 0] == pytest.approx(0.1) and f[1, 0] == pytest.approx(0.1) and f[2, 0] == 0
+    assert f[1, 1] == pytest.approx(0.1) and f[0, 1] == 0  # 0 -> 1 -> 2 relays at node 1
+    assert not f[:, 2:].any()  # past the horizon of a scenario without flow rates
+    assert not future_load(env.backend.sc, inp.report, bins=(10,), placebo=True).any()
+
+
+def test_privileged_critic_leaves_the_actor_untouched():
+    from fanet_next.model.runner import replay as _replay
+    spec = {"bins": [10, 30, 100]}
+    base_cfg = {**CFG, "model": {**dict(CFG["model"]), "privileged_dim": 0}}
+    priv_cfg = {**CFG, "model": {**dict(CFG["model"]), "privileged_dim": 6}}
+    torch.manual_seed(0)
+    base = build_model(base_cfg, feature_schema(base_cfg))
+    torch.manual_seed(0)
+    model = build_model(priv_cfg, feature_schema(priv_cfg))
+    sd = base.state_dict()
+    assert all(torch.equal(v, model.state_dict()[k]) for k, v in sd.items())  # same start elsewhere
+    policy = build_policy(priv_cfg, "ppo", model=model)
+    envs = [build_env(priv_cfg, run_id=f"p{e}") for e in range(2)]
+    for env in envs:
+        env.privileged = spec
+    col = RolloutCollector(envs, policy, seeds=SeedStream(5), scaler=ReturnScaler(2, 0.99), rollout_cycles=8)
+    recs = col.collect().records
+    g = envs[0].current.graph
+    assert g.priv_node_x is not None and g.priv_node_x.shape[1] == 6 and g.priv_node_x.any()
+    micro = [r.micro for r in recs]
+    rp, rb = _replay(model, micro), _replay(base, micro)
+    assert torch.allclose(rp.logp, rb.logp) and torch.allclose(rp.values, rb.values)  # zero-initialised path
+    with torch.no_grad():
+        model.priv.out.weight.normal_()
+    rp2 = _replay(model, micro)
+    assert torch.allclose(rp2.logp, rb.logp)  # the actor never sees the privileged features
+    assert not torch.allclose(rp2.values[rp2.state_mask], rb.values[rb.state_mask])
+    (-rp2.logp[rp2.act_mask].sum() + rp2.values[rp2.state_mask].pow(2).sum()).backward()
+    assert model.priv.out.weight.grad is not None and model.priv.out.weight.grad.abs().sum() > 0

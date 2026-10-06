@@ -1,0 +1,11 @@
+# E21 臂 P1（探索，2026-10-06，不替代定稿配置）：非对称演员-评论者。评论者在训练时额外看到
+# 每个节点未来 [0,10)、[10,30)、[30,100) 个周期的外生到达（作为源的产生量和作为中继的过境量），
+# 演员的输入不变。到达不受调度影响，所以这是不改变期望梯度的输入相关基线。
+extends = "../protocol_final.toml"
+name = "e21-privileged"
+
+[model]
+privileged_dim = 6
+
+[training]
+privileged_critic = { bins = [10, 30, 100], placebo = false }

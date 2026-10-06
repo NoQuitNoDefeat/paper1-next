@@ -77,6 +77,7 @@ class PPO:
         out = {k: float(np.mean(v)) if v else 0.0 for k, v in stats.items()}
         out.update(self._explained_variance(records))
         out["actions"] = int(len(acts))
+        out["adv_std_raw"] = float(acts.std()) if len(acts) else 0.0  # before normalisation (E21)
         out["cycles"] = len(records)
         return out
 

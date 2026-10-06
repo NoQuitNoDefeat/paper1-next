@@ -31,7 +31,8 @@ TRAINING_DEFAULTS = dict(
     checkpoint_every=10, keep_every=50, threads=1, device="cpu", eval_drain_cycles=0,
     credit="step",  # "flat" / "cycle" (E17), "none" (E18): training.advantages.compute_stream_advantages
     adv_lambda=None,  # lambda of the actor's advantages when it differs from gae_lambda (E18)
-    reward_norm_envs=None)  # environments that update the reward scale (default all; E20 U4)
+    reward_norm_envs=None,  # environments that update the reward scale (default all; E20 U4)
+    privileged_critic=None)  # {"bins": [...], "placebo": bool}: training-only critic input (E21)
 
 
 def seed_everything(seed: int) -> None:
@@ -53,6 +54,8 @@ class TrainingRun:
         self.model = build_model(cfg, schema).to(t["device"])
         self.policy = LearnedPolicy(self.model, device=t["device"], seed=self.seed + 100_000)
         self.envs = [build_env(cfg, run_id=f"train-env{e}") for e in range(int(t["num_envs"]))]
+        for env in self.envs:
+            env.privileged = t["privileged_critic"]
         self.manifest = check_compatibility(self.envs[0], self.policy)
         self.scaler = ReturnScaler(len(self.envs), t["gamma"], enabled=bool(t["reward_norm"]),
                                    update_envs=t["reward_norm_envs"])
@@ -195,6 +198,8 @@ class TrainingRun:
         # environments keep exactly the same imitation data and start (E19)
         n_imit = int(icfg["num_envs"]) if icfg["num_envs"] else len(self.envs)
         envs = [build_env(self.cfg, run_id=f"imitate-env{e}") for e in range(n_imit)]
+        for env in envs:
+            env.privileged = self.tcfg["privileged_critic"]
         base = TRAIN_SEED_BASE + 100_000 * self.seed + 50_000
         records = teacher_records(envs, teacher, [base + e for e in range(len(envs))],
                                   int(icfg["cycles"]), self.tcfg["gamma"])

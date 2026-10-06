@@ -39,6 +39,7 @@ class DualGraph:
     inter_index: np.ndarray  # (2, M) candidate a -> candidate b
     inter_x: np.ndarray  # (M, Fi)
     global_x: np.ndarray  # (Fg,)
+    priv_node_x: np.ndarray | None = None  # (N, Fp) training-only critic input (E21), else None
 
     @property
     def num_nodes(self) -> int:
@@ -68,6 +69,7 @@ class GraphBatch:
     num_cand: torch.Tensor  # (B,)
     max_cand: int
     cand_offset: torch.Tensor  # (B,) first global candidate index of each graph
+    priv_node_x: torch.Tensor | None = None  # (sumN, Fp) when every graph carries it
 
     def pad_candidates(self, flat: torch.Tensor, fill: float = 0.0) -> torch.Tensor:
         """(sumC, ...) -> (B, max_cand, ...), padding with ``fill``."""
@@ -117,4 +119,6 @@ def batch_graphs(graphs: list[DualGraph], device: torch.device | str = "cpu") ->
         num_cand=t(n_cand, torch.long),
         max_cand=int(n_cand.max()) if len(n_cand) else 0,
         cand_offset=t(cand_off, torch.long),
+        priv_node_x=(t(cat([g.priv_node_x for g in graphs])) if graphs and
+                     all(g.priv_node_x is not None for g in graphs) else None),
     )

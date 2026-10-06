@@ -1,0 +1,39 @@
+{
+ "scenarios": {
+  "base": {}
+ },
+ "name": "E21 非对称演员-评论者：特权评论者（未来到达）与安慰剂",
+ "runs": "results/e21/runs/{kind}-s{seed}",
+ "kinds": {
+  "privileged": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e21_privileged.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.1,
+   "mem_gb": 1.8,
+   "priority": 0
+  },
+  "placebo": {
+   "cmd": [
+    "train",
+    "--config",
+    "configs/explore/e21_placebo.toml"
+   ],
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "cost": 1.1,
+   "mem_gb": 1.8,
+   "priority": 0
+  }
+ }
+}

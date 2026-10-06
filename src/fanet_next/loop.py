@@ -45,11 +45,17 @@ class SchedulingEnv:
         self.metrics = MetricsAccumulator()
         self.current: DecisionInput | None = None
         self.seed: int | None = None
+        self.privileged: dict | None = None  # training-only critic input (E21), set by the trainer
 
     def _input(self, report) -> DecisionInput:
         self.observation.observe(report)
         problem = make_problem(report, self.candidates.select(report))
         graph = self.observation.build(report, problem) if self.build_graph else None
+        if graph is not None and getattr(self, "privileged", None):
+            from .observation.privileged import DEFAULT_BINS, future_load
+            spec = self.privileged
+            graph.priv_node_x = future_load(self.backend.sc, report, tuple(spec.get("bins", DEFAULT_BINS)),
+                                            placebo=bool(spec.get("placebo", False)))
         return DecisionInput(report=report, problem=problem,
                              controller=self.constraints.start(problem), graph=graph)
 
