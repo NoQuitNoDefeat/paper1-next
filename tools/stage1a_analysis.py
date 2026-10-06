@@ -5,17 +5,24 @@ results/stage1a/analysis.json; parts without results are skipped.
 X0 (descriptive): per deadline and family, means over episodes of the ledger (all born packets and
 the steady-state window).
 
-X1: per margin arm and family, the steady-state delivery gain of the rollout over heur@R5 (paired
-over scenes, t interval), wins, the non-base share, window agreement (choice with H vs 1.5 H, mean
-1.5 H gain of the chosen non-base candidates), clairvoyant agreement (mean true-future gain of the
-chosen non-base candidates), and how long held-back packets waited.  Passing arm: mean >= +1 point
-with lower bound > 0 in at least two families, and in those families the mean 1.5 H gain of the
-chosen non-base candidates > 0.  The primary arm is margin 1; margin 0 is secondary.
+X1: per arm (primary: margin 1 with K = 4 futures; secondary: cross-fitted with K = 8) and family,
+the steady-state delivery gain of the rollout over heur@R5 (paired over scenes, t interval), wins,
+the non-base share, the window check on the TRUE future (never used by the choice): the mean
+1.5 H-window gain of the chosen non-base candidates, the clairvoyance check (mean H-window gain of
+the chosen non-base candidates on the true future, share with a negative one), window agreement
+(the same rule applied to the 1.5 H scores), and how long held-back packets waited.  Passing arm:
+mean >= +1 point with lower bound > 0 in at least two families, and in those families the mean
+true-future 1.5 H gain of the chosen non-base candidates > 0.  A failing arm whose chosen non-base
+candidates have a negative mean true-future gain is read as teacher noise, not as "no value".
+Readings need all three families with the registered episodes and seeds; otherwise "incomplete".
 
 X2: per deadline, family and mode, the steady-state delivery change of iteration k over iteration 0
 (paired over scenes), the conversion g and the mask size.  Iteration 1 is primary (the mask built
-from the base trajectory); iterations 2-3 are reported.  Readings at D = 1 in both congested
-families (load_high, nodes24): r2 >= +1.5 -> relay-level value; b >= +1.5 -> source-level value.
+from the base trajectory, the same for every mode); iterations 2-3 are reported.  Readings at D = 1
+in both congested families (load_high, nodes24): r2 >= +1.5 -> relay-level value; b >= +1.5 ->
+source-level value; b >= +1.5 with r2 < +1 in both -> value at the source (C becomes a candidate,
+A centred on source links); r2 < +1 in both -> A is not the main method on relay value.  Per
+family, rd - r2 at iteration 1 (paired over scenes) separates the buffer-occupancy confound.
 
     .venv/bin/python tools/stage1a_analysis.py
 """
@@ -33,7 +40,13 @@ FAMILIES = ("default", "load_high", "nodes24")
 CONGESTED = ("load_high", "nodes24")
 DEADLINES = ("1", "5")
 MODES = ("a", "b", "r1", "r2", "rd")
-MARGINS = ("1", "0")
+ARMS = {"margin1": ("margin", 4), "crossfit": ("crossfit", 8)}  # file suffix: select mode, futures
+EXPECT = {"x0": (16, 1000), "s1e": (12, 1020), "x2": (32, 1040)}
+
+
+def complete(x, kind) -> bool:
+    n, off = EXPECT[kind]
+    return x is not None and x.get("episodes") == n and x.get("seed_offset") == off and len(x.get("rows", [])) == n
 
 
 def ci(d) -> dict | None:
@@ -60,7 +73,8 @@ def x0() -> dict:
     for d in DEADLINES:
         for f in FAMILIES:
             x = load(f"results/x0/{f}_D{d}.json")
-            if x is None:
+            if not complete(x, "x0"):
+                out[f"{f}|D{d}"] = "incomplete"
                 continue
             rows = x["rows"]
 
@@ -82,11 +96,12 @@ def x0() -> dict:
 
 def x1() -> dict:
     out = {}
-    for m in MARGINS:
-        arm, passing = {}, []
+    for arm, (select, futures) in ARMS.items():
+        cells, passing, missing = {}, [], []
         for f in FAMILIES:
-            x = load(f"results/s1e/{f}_m{m}.json")
-            if x is None:
+            x = load(f"results/s1e/{f}_{arm}.json")
+            if not complete(x, "s1e") or x.get("select") != select or x.get("futures") != futures:
+                missing.append(f)
                 continue
             rows = x["rows"]
             gain = [r["rollout"]["steady"]["delivered"] - r["base"]["steady"]["delivered"] for r in rows]
@@ -94,26 +109,38 @@ def x1() -> dict:
             dec = [d for r in rows for d in r.get("decisions", [])]
             nb = [d for d in dec if d["chosen"] != "base"]
             held = [h for r in rows for h in r.get("held", [])]
+            true_h = [d["gain_true"][d["chosen"]] for d in nb]
+            true_15 = [d["gain_true_15"][d["chosen"]] for d in nb]
             cell = {"gain_steady_pts": ci([100 * g for g in gain]), "gain_all_pts": ci([100 * g for g in gain_all]),
                     "decisions": len(dec), "non_base_share": len(nb) / max(len(dec), 1),
+                    "chosen_true_gain_mean": float(np.mean(true_h)) if nb else None,
+                    "chosen_true_gain_negative_share": float(np.mean([g < 0 for g in true_h])) if nb else None,
+                    "chosen_true_gain_15_mean": float(np.mean(true_15)) if nb else None,
                     "window_agreement": float(np.mean([d["chosen"] == d["chosen_15"] for d in dec])) if dec else None,
-                    "chosen_gain_15_mean": float(np.mean([d["gain_15"][d["chosen"]] for d in nb])) if nb else None,
-                    "chosen_gain_true_mean": float(np.mean([d["gain_true"][d["chosen"]] for d in nb])) if nb else None,
                     "true_agreement": float(np.mean([d["chosen"] == d["chosen_true"] for d in dec])) if dec else None,
                     "true_non_base_share": float(np.mean([d["chosen_true"] != "base" for d in dec])) if dec else None,
-                    "chosen_kinds": {k: sum(d["chosen"].startswith(k) for d in nb) for k in ("skip", "drop_last2", "drop_last")},
+                    "chosen_kinds": {"skip": sum(d["chosen"].startswith("skip") for d in nb),
+                                     "drop_last": sum(d["chosen"] == "drop_last" for d in nb),
+                                     "drop_last2": sum(d["chosen"] == "drop_last2" for d in nb),
+                                     "equals_drop_last": sum("drop_last" in d.get("aliases", []) for d in nb)},
                     "held_wait_mean_cycles": float(np.mean([h["waited"] for h in held])) if held else None,
                     "held_lost_share": float(np.mean([h["fate"] == "lost" for h in held])) if held else None}
-            arm[f] = cell
+            cells[f] = cell
             g = cell["gain_steady_pts"]
-            if g and g["mean"] >= 1.0 and g["lo"] > 0 and (cell["chosen_gain_15_mean"] or 0) > 0:
+            if g and g["mean"] >= 1.0 and g["lo"] > 0 and (cell["chosen_true_gain_15_mean"] or 0) > 0:
                 passing.append(f)
-        arm["passing_families"] = passing
-        arm["passes"] = len(passing) >= 2
-        out[f"margin{m}"] = arm
+        arm_out = {**cells, "missing": missing}
+        if not missing:
+            arm_out["passing_families"] = passing
+            arm_out["passes"] = len(passing) >= 2
+            noisy = [f for f in FAMILIES if (cells[f]["chosen_true_gain_mean"] or 0) < 0]
+            arm_out["teacher_noise_families"] = noisy
+        out[arm] = arm_out
     prim = out.get("margin1", {})
-    if "passes" in prim:
-        gains = [prim[f]["gain_steady_pts"]["mean"] for f in FAMILIES if f in prim and prim[f]["gain_steady_pts"]]
+    if prim.get("missing"):
+        out["reading"] = "incomplete"
+    else:
+        gains = [prim[f]["gain_steady_pts"]["mean"] for f in FAMILIES if prim[f]["gain_steady_pts"]]
         out["reading"] = ("B to stage 2; A's waiting enabled" if prim["passes"] else
                           "B audit only; A without waiting" if gains and max(gains) > 0 else
                           "B stops; A without waiting")
@@ -126,7 +153,8 @@ def x2() -> dict:
         for f in FAMILIES:
             for mode in MODES:
                 x = load(f"results/x2/{f}_D{d}_{mode}.json")
-                if x is None:
+                if not complete(x, "x2"):
+                    out[f"{f}|D{d}|{mode}"] = "incomplete"
                     continue
                 rows = x["rows"]
                 cell = {}
@@ -142,10 +170,28 @@ def x2() -> dict:
                 cell["base_wasted_share"] = float(np.mean([r["iterations"][0]["tx_wasted_share"] for r in rows]))
                 out[f"{f}|D{d}|{mode}"] = cell
 
-    def value(mode):
-        cells = [out.get(f"{f}|D1|{mode}", {}).get("iter1", {}).get("delta_steady_pts") for f in CONGESTED]
-        return None if any(c is None for c in cells) else all(c["mean"] >= 1.5 for c in cells)
-    out["reading"] = {"relay_value_r2": value("r2"), "source_value_b": value("b")}
+    def cells(mode):
+        cs = [out.get(f"{f}|D1|{mode}") for f in CONGESTED]
+        if any(not isinstance(c, dict) for c in cs):
+            return None
+        return [c["iter1"]["delta_steady_pts"] for c in cs]
+    r2, b = cells("r2"), cells("b")
+    rd_r2 = {}
+    for d in DEADLINES:
+        for f in FAMILIES:
+            xr, xd = load(f"results/x2/{f}_D{d}_r2.json"), load(f"results/x2/{f}_D{d}_rd.json")
+            if complete(xr, "x2") and complete(xd, "x2"):
+                by = {r["seed"]: r for r in xr["rows"]}
+                rd_r2[f"{f}|D{d}"] = ci([100 * (r["iterations"][1]["delivered_steady"] - by[r["seed"]]["iterations"][1]["delivered_steady"])
+                                         for r in xd["rows"] if r["seed"] in by])
+    if r2 is None or b is None or any(c is None for c in r2 + b):
+        out["reading"] = "incomplete"
+    else:
+        r2_val, b_val = all(c["mean"] >= 1.5 for c in r2), all(c["mean"] >= 1.5 for c in b)
+        r2_low = all(c["mean"] < 1.0 for c in r2)
+        out["reading"] = {"relay_value_r2": r2_val, "source_value_b": b_val, "r2_below_1_both": r2_low,
+                          "value_at_source_C_candidate": b_val and r2_low}
+    out["rd_minus_r2_iter1_pts"] = rd_r2
     return out
 
 

@@ -1,9 +1,10 @@
 """Per-packet bookkeeping for stage-1 diagnostics (X0 loss ledger, X2 hindsight probe, S1e).
 
 Wrap every ``env.step`` with ``before(env)`` / ``after(env, tr)``.  For each packet id it keeps the
-birth cycle, the route length at birth, successful transmissions, the remaining time at each
-departure from its source and each arrival at a relay, the cycle it first became hopeless under the
-current routes (fewer whole cycles left than hops left), and its fate (delivered with delay, or the
+birth cycle, the route length at birth, successful transmissions, the remaining time at its first
+departure from its source and at each arrival at a relay, the cycle it first became hopeless under
+the current routes (it cannot make the deadline even if it moves one hop at the start of every
+remaining cycle: remaining < (hops - 1) * T + one packet airtime), and its fate (delivered with delay, or the
 termination reason and where it was: source, relay, waiting area, late at the destination).
 
 The steady-state window counts packets born in cycles [W, stop - D/T) with W = max(100, D/T)
@@ -56,12 +57,13 @@ class PacketTracker:
         self.pre_wait = {p.pid for w in be.waiting for p in w}
         if self.deadline is None:
             return
+        air = sc.packet_size * 8.0 / sc.radio.rate_bps
         for pid, (p, node) in self.pre.items():
             lg = self.log.get(pid)
             if lg is None or lg.hopeless_cycle is not None:
                 continue
             hops = 0 if node == p.dst else be._route_len(node, p.dst)
-            if hops > 0 and math.floor((p.born + self.deadline - t) / sc.cycle_length + 1e-9) < hops:
+            if hops > 0 and p.born + self.deadline - t < (hops - 1) * sc.cycle_length + air - 1e-12:
                 lg.hopeless_cycle = be.cycle
 
     def after(self, env, tr) -> None:
@@ -83,7 +85,7 @@ class PacketTracker:
                 if self.deadline is not None:
                     rem = self.deadline - (t_done - p.born)
                     lg.last_tx_remaining = rem
-                    if node0 == p.src:
+                    if node0 == p.src and lg.depart_remaining is None:
                         lg.depart_remaining = rem
                     if pid not in delivered and p.node != p.dst:
                         lg.arrive_remaining.append(rem)

@@ -252,7 +252,8 @@ class LightweightBackend(Backend):
             packets = np.fromiter((len(d) for d in vis), dtype=np.int64, count=q)
             nbytes = np.fromiter((sum(p.size for p in d) for d in vis), dtype=np.int64, count=q)
             hol = np.fromiter((t - d[0].enqueued if d else 0.0 for d in vis), dtype=float, count=q)
-            return QueueSnapshot(packets, nbytes, self.qcap.copy(), np.maximum(hol, 0.0))
+            hidden = np.fromiter((len(d) - len(v) for d, v in zip(self.queues, vis)), dtype=np.int64, count=q)
+            return QueueSnapshot(packets, nbytes, self.qcap - hidden, np.maximum(hol, 0.0))  # room stays exact
         packets = np.fromiter((len(d) for d in self.queues), dtype=np.int64, count=q)
         nbytes = np.fromiter((sum(p.size for p in d) for d in self.queues), dtype=np.int64, count=q)
         hol = np.fromiter((t - d[0].enqueued if d else 0.0 for d in self.queues), dtype=float, count=q)
@@ -352,7 +353,7 @@ class LightweightBackend(Backend):
                 served_p[q] += 1
                 served_b[q] += p.size
                 if p.dst == rx and self.deadline_s is not None and t_done - p.born > self.deadline_s + EPS:
-                    p.node = rx
+                    p.node, p.node_arrived = rx, t_done
                     late_arrivals.append(p)
                 elif p.dst == rx:
                     facts_delivered.append(p.pid)
