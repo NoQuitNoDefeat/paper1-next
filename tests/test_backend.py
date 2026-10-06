@@ -365,6 +365,44 @@ def test_deadline_drops_late_arrivals_at_the_destination(deadline, delivered):
     assert b.totals["born"] == b.totals["delivered"] + b.totals["terminated"] + sum(b.in_system())
 
 
+def _q_packets(inp, link):
+    return int(inp.report.queues.packets[q_of(inp.report, link)])
+
+
+@pytest.mark.parametrize("mode,shown,delivered", [("r1", 2, {1}), ("r2", 1, {1})])
+def test_hindsight_mask_holds_packets_at_relays(mode, shown, delivered):
+    births = [(0.001, 0, 2), (0.002, 0, 2)]
+    env = fixed_env(line_positions(3), births, horizon=5, backend=_lw())
+    env.reset(0)
+    env.backend.set_hindsight_mask({0}, mode)
+    inp = env.step([]).next_input
+    inp = env.step([_link(inp, (0, 1))]).next_input  # both leave the source (not held there)
+    assert _q_packets(inp, (1, 2)) == shown
+    tr = env.step([_link(inp, (1, 2))])
+    assert set(tr.facts.delivered_ids) == delivered  # packet 0 stays at the relay
+    b = env.backend
+    assert b.totals["born"] == b.totals["delivered"] + b.totals["terminated"] + sum(b.in_system())
+
+
+def test_hindsight_mask_b_keeps_packets_at_their_source_and_a_drops_them_at_birth():
+    births = [(0.001, 0, 2), (0.002, 0, 2)]
+    env = fixed_env(line_positions(3), births, horizon=5, backend=_lw())
+    env.reset(0)
+    env.backend.set_hindsight_mask({0}, "b")
+    inp = env.step([]).next_input
+    assert _q_packets(inp, (0, 1)) == 1  # hidden at the source
+    inp = env.step([_link(inp, (0, 1))]).next_input
+    assert _q_packets(inp, (1, 2)) == 1 and len(env.backend.queues[q_of(inp.report, (0, 1))]) == 1
+
+    env.reset(0)
+    env.backend.set_hindsight_mask({0}, "a")
+    tr = env.step([])
+    assert tr.facts.terminations.get("masked") == [0]
+    assert _q_packets(tr.next_input, (0, 1)) == 1
+    b = env.backend
+    assert b.totals["born"] == b.totals["delivered"] + b.totals["terminated"] + sum(b.in_system())
+
+
 def test_default_backend_counters_are_pinned():
     """Golden counters of the default environment (recorded before the stage-0 options): any change
     of the default path shows up here."""

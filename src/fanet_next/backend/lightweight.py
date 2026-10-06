@@ -58,6 +58,7 @@ class LightweightBackend(Backend):
     # class-level defaults: environments pickled by older code (resumed training) keep working
     service_order, room_aware_service, buffer, route_stagger = "fifo", False, "per_queue", False
     node_buffer_packets, rehome_overflow = None, "drop"
+    mask_pids, mask_mode = frozenset(), None  # hindsight mask (diagnostic X2), see set_hindsight_mask
 
     def __init__(self, channel: dict | str = "ideal", routing: dict | str = "min_hop",
                  stale_queue_policy: str = "rehome", deadline_s: float | None = None,
@@ -145,6 +146,31 @@ class LightweightBackend(Backend):
         np.fill_diagonal(adjacency, False)
         return self.routing.compute(adjacency, ratio)
 
+    # ------------------------------------------------------- hindsight mask (X2)
+    MASK_MODES = ("a", "b", "r1", "r2", "rd")
+
+    def set_hindsight_mask(self, pids, mode: str | None) -> None:
+        """Diagnostic X2 (not part of any method): a set of packet ids chosen in hindsight.
+        ``a`` drops them at birth; ``b`` never sends them from their source and hides them there
+        from the report; ``r1`` never forwards them from a relay (they still count in the report);
+        ``r2`` as r1 and hides them at relays from the report (b, r1, r2: masked packets still
+        occupy buffer room until they expire); ``rd`` drops them when they reach a relay.
+        ``mode=None`` clears the mask."""
+        if mode is not None and mode not in self.MASK_MODES:
+            raise ValueError(f"mask mode must be one of {self.MASK_MODES}")
+        self.mask_pids, self.mask_mode = (frozenset(int(x) for x in pids), mode) if mode else (frozenset(), None)
+
+    def _held(self, p: Packet) -> bool:
+        """The packet may not be sent this cycle under the hindsight mask."""
+        if not self.mask_pids or p.pid not in self.mask_pids:
+            return False
+        at_src = p.node == p.src
+        return (self.mask_mode == "b" and at_src) or (self.mask_mode in ("r1", "r2") and not at_src)
+
+    def _hidden(self, p: Packet) -> bool:
+        """The packet is left out of the report (mask modes b and r2)."""
+        return self.mask_mode in ("b", "r2") and self._held(p)
+
     # --------------------------------------------------- routes and buffer room
     def _route_len(self, a: int, d: int) -> int:
         """Hops from node ``a`` to ``d`` along the current next-hop table (0 at d, -1: no route)."""
@@ -202,6 +228,8 @@ class LightweightBackend(Backend):
         picked = []
         for i in order:
             p = cands[i]
+            if self.mask_pids and self._held(p):
+                continue
             if p.size > budget:
                 break
             if self.room_aware_service:
@@ -219,6 +247,12 @@ class LightweightBackend(Backend):
     # ---------------------------------------------------------------- reports
     def _snapshot(self, t: float) -> QueueSnapshot:
         q = len(self.queues)
+        if self.mask_pids and self.mask_mode in ("b", "r2"):  # hidden packets are left out
+            vis = [[p for p in d if not self._hidden(p)] for d in self.queues]
+            packets = np.fromiter((len(d) for d in vis), dtype=np.int64, count=q)
+            nbytes = np.fromiter((sum(p.size for p in d) for d in vis), dtype=np.int64, count=q)
+            hol = np.fromiter((t - d[0].enqueued if d else 0.0 for d in vis), dtype=float, count=q)
+            return QueueSnapshot(packets, nbytes, self.qcap.copy(), np.maximum(hol, 0.0))
         packets = np.fromiter((len(d) for d in self.queues), dtype=np.int64, count=q)
         nbytes = np.fromiter((sum(p.size for p in d) for d in self.queues), dtype=np.int64, count=q)
         hol = np.fromiter((t - d[0].enqueued if d else 0.0 for d in self.queues), dtype=float, count=q)
@@ -239,7 +273,8 @@ class LightweightBackend(Backend):
         queue_dst = np.zeros((len(self.queues), sc.num_nodes), dtype=np.int64)
         for i, d in enumerate(self.queues):
             for p in d:
-                queue_dst[i, p.dst] += 1
+                if not (self.mask_pids and self._hidden(p)):
+                    queue_dst[i, p.dst] += 1
         return Report(
             run_id=self.run_id, episode=self.episode, cycle=k, time=t,
             cycle_length=sc.cycle_length, num_nodes=sc.num_nodes, positions=pos,
@@ -299,7 +334,7 @@ class LightweightBackend(Backend):
                 continue
             succeeded.append((tx, rx))
             budget, t_done = radio.service_bytes, t0
-            if self.service_order != "fifo" or self.room_aware_service:
+            if self.service_order != "fifo" or self.room_aware_service or self.mask_pids:
                 sent = iter(self._select_service(queue, rx, budget, claims))
             else:
                 sent = None
@@ -329,12 +364,16 @@ class LightweightBackend(Backend):
                     staged.append(p)
         births = sc.births(k)
         born_hops0 = []
+        masked_births = []
         for b in births:
             p = Packet(self.next_pid, b.src, b.dst, b.size, b.time)
             p.hops0 = self._route_len(int(b.src), int(b.dst))
             born_hops0.append(p.hops0)
             self.next_pid += 1
-            staged.append(p)
+            if self.mask_mode == "a" and p.pid in self.mask_pids:
+                masked_births.append(p)  # dropped at birth (X2 mode a)
+            else:
+                staged.append(p)
 
         # 2. post-service snapshot (before terminations and admission)
         post = self._snapshot(t1)
@@ -351,6 +390,8 @@ class LightweightBackend(Backend):
             term_nodes[int(pkt.node)] += 1
             relay_terminated += int(pkt.node != pkt.src)
 
+        for p in masked_births:
+            terminate("masked", p)
         if self.retry_limit is not None:
             for queue in self.queues:
                 while queue and queue[0].retries > self.retry_limit:
@@ -418,6 +459,11 @@ class LightweightBackend(Backend):
             pending.sort(key=lambda e: (e[0].node_arrived, e[0].pid))
         moved_to_waiting = restored = 0
         for p, from_waiting in pending:
+            if self.mask_mode == "rd" and p.pid in self.mask_pids and p.node != p.src:
+                if from_waiting:
+                    self.waiting[p.node].remove(p)
+                terminate("masked", p)  # X2 mode rd: dropped on reaching a relay
+                continue
             nh = int(self.next_hop[p.node, p.dst])
             if nh >= 0:
                 q = self.qindex.get((p.node, nh))

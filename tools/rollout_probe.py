@@ -31,6 +31,7 @@ import argparse
 import collections
 import copy
 import json
+from dataclasses import replace
 from multiprocessing import Pool
 
 import numpy as np
@@ -54,11 +55,18 @@ def _cfg(a):
     return cfg
 
 
-def _plans(env, base, others) -> dict[str, tuple]:
+def _fresh(env):
+    """The current decision input with a fresh controller: a policy steps the controller it is
+    given, so every policy needs its own (before 2026-10-06 the other rules were handed the base
+    policy's finished controller and returned the base plan: S1b-S1d never evaluated them)."""
     inp = env.current
-    out = {"base": tuple(base.act([inp], mode="greedy")[0].actions)}
+    return replace(inp, controller=env.constraints.start(inp.problem))
+
+
+def _plans(env, base, others) -> dict[str, tuple]:
+    out = {"base": tuple(base.act([_fresh(env)], mode="greedy")[0].actions)}
     for name, pol in others.items():
-        out[name] = tuple(pol.act([inp], mode="greedy")[0].actions)
+        out[name] = tuple(pol.act([_fresh(env)], mode="greedy")[0].actions)
     b = out["base"]
     if len(b) >= 1:
         out["wait_last"] = b[:-1]
