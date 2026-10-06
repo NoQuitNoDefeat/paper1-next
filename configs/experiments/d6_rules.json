@@ -18,8 +18,8 @@
   "backpressure"
  ],
  "controls": {
-  "lq_lasthop_bTBD": {
-   "policy": "TBD after d6_beta",
+  "lq_lasthop_b1.0": {
+   "policy": "{\"type\": \"lq_lasthop\", \"beta\": 1.0}",
    "set": []
   }
  },

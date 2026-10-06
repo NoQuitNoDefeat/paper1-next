@@ -1,0 +1,33 @@
+{
+ "name": "D8 复核：交付率优先选出的检查点（开发种子 48–79，排空 1000）",
+ "out": "results/d8/confirm",
+ "main": "s0_it50",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 48,
+  "episodes": 32,
+  "drain": 1000,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [],
+ "groups": {},
+ "fixed": {
+  "s0_it50": "results/e6/no_set_summary-s0/checkpoints/iter_00050.pt",
+  "s1_it175": "results/e6/no_set_summary-s1/checkpoints/iter_00175.pt",
+  "s2_it100": "results/e6/no_set_summary-s2/checkpoints/iter_00100.pt"
+ },
+ "scenarios": {
+  "default": [],
+  "load_high": [
+   "scenario.flow_rate_pps=[30.0, 45.0]"
+  ],
+  "nodes24": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4"
+  ]
+ }
+}

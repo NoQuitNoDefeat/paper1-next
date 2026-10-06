@@ -294,7 +294,9 @@ def drops() -> dict | None:
         L = {r["seed"]: r for r in json.loads(lq.read_text())["rows"]}
         Ms = [{r["seed"]: r for r in json.loads(m.read_text())["rows"]} for m in mains]
         seeds = sorted(set(L).intersection(*Ms))
-        M = {s: {k: float(np.mean([m[s].get(k, 0.0) for m in Ms])) for k in L[s] if k != "seed"} for s in seeds}
+        keys = {k for rows in (L, *Ms) for r in rows.values() for k in r if k != "seed"}
+        L = {s: {k: L[s].get(k, 0.0) for k in keys} for s in seeds}  # a cause absent from an episode is 0
+        M = {s: {k: float(np.mean([m[s].get(k, 0.0) for m in Ms])) for k in keys} for s in seeds}
         tot = json.loads(lq.read_text())["share_of_born_pct"]
         rehome = tot.get("overflow_rehome", 0.0)
         res[fam] = {
