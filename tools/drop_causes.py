@@ -2,9 +2,12 @@
 of relay arrivals (packets transmitted this cycle into a full next queue at the receiver), and of
 re-homed packets (a route update moved queued packets to the new next-hop queue at the same node,
 which was full), the latter split by where the packet was (its source or a relay); plus
-waiting-area overflow and timeout.  Shares are of all born packets.  Also the mean number of
-queued packets at their source and at relays per cycle of the traffic period (drain excluded).
-``--set`` applies further overrides (rules or environment options of stage 0).
+waiting-area overflow and timeout.  With a packet deadline (``backend.deadline_s``), expiries
+are split by where the packet was: at its source, at a relay, in a waiting area, or reaching its
+destination too late.  Shares are of all born packets.  Also the mean number of queued packets at
+their source and at relays per cycle of the traffic period (drain excluded), and the successful
+transmissions spent on packets that were later lost ("wasted", per born packet and as a share of
+all successful transmissions).  ``--set`` applies further overrides (rules, deadline, options).
 
     .venv/bin/python tools/drop_causes.py load_high results/e6/no_set_summary-s0 --episodes 16
     .venv/bin/python tools/drop_causes.py load_high longest_queue --episodes 16
@@ -53,12 +56,14 @@ def main() -> None:
     env = build_env(cfg, run_id="drops", build_graph=policy.needs_graph, scenario_override=sc)
     tot = collections.Counter()
     rows = []
+    tx: collections.Counter = collections.Counter()  # successful hops of packets still in the system
     for i, seed in enumerate(split_seeds("dev", a.episodes, a.seed_offset)):
         env.reset(seed, episode=i)
         be = env.backend
         before = collections.Counter(tot)
         while True:
             queued = {p.pid: (p, p.node) for q in be.queues for p in q}  # packet and its node now
+            waiting = {p.pid for w in be.waiting for p in w}
             if not be.sc.traffic_done(be.cycle):  # occupancy over the traffic period only
                 at_src = sum(1 for p, node in queued.values() if node == p.src)
                 tot["queued_at_source_cycles"] += at_src
@@ -68,9 +73,26 @@ def main() -> None:
             f = tr.facts
             tot["born"] += f.births
             tot["delivered"] += len(f.delivered_ids)
+            delivered = set(f.delivered_ids)
+            for pid, (pkt, node0) in queued.items():  # transmitted this cycle: delivered or moved on
+                if pid in delivered or pkt.node != node0:
+                    tx[pid] += 1
+                    tot["tx"] += 1
+            for pid in delivered:
+                tot["tx_delivered"] += tx.pop(pid, 0)
             for reason, ids in f.terminations.items():
                 for pid in ids:
-                    if reason != "queue_overflow":
+                    tot["tx_wasted"] += tx.pop(pid, 0)
+                    if reason == "deadline":
+                        if pid in waiting:
+                            tot["deadline_waiting"] += 1
+                        elif pid not in queued:
+                            tot["deadline_unqueued"] += 1  # born or arrived this cycle
+                        else:
+                            pkt = queued[pid][0]
+                            tot["deadline_late_arrival" if pkt.node == pkt.dst else
+                                "deadline_at_source" if pkt.node == pkt.src else "deadline_at_relay"] += 1
+                    elif reason != "queue_overflow":
                         tot[reason] += 1
                     elif pid not in queued:
                         tot["overflow_birth"] += 1
@@ -85,7 +107,10 @@ def main() -> None:
         ep = tot - before  # this episode's counts
         b, cyc = max(ep["born"], 1), max(ep["cycles"], 1)
         row = {"seed": seed, **{k: ep[k] / b for k in ep if k not in ("born", "cycles")
-                                and not k.startswith("queued_")}}
+                                and not k.startswith(("queued_", "tx"))}}
+        row["tx_per_born"] = ep["tx"] / b
+        row["tx_wasted_per_born"] = ep["tx_wasted"] / b
+        row["tx_wasted_share"] = ep["tx_wasted"] / max(ep["tx"], 1)
         row["overflow_rehome"] = (ep["overflow_rehome_at_source"] + ep["overflow_rehome_at_relay"]) / b
         row["queued_at_source_mean"] = ep["queued_at_source_cycles"] / cyc
         row["queued_at_relay_mean"] = ep["queued_at_relay_cycles"] / cyc
@@ -94,9 +119,13 @@ def main() -> None:
     born, cycles = tot.pop("born"), max(tot.pop("cycles"), 1)
     occ = {"queued_at_source_mean": round(tot.pop("queued_at_source_cycles") / cycles, 2),
            "queued_at_relay_mean": round(tot.pop("queued_at_relay_cycles") / cycles, 2)}
+    n_tx, wasted, useful = tot.pop("tx", 0), tot.pop("tx_wasted", 0), tot.pop("tx_delivered", 0)
+    txs = {"tx_per_born": round(n_tx / max(born, 1), 3), "tx_wasted_per_born": round(wasted / max(born, 1), 3),
+           "tx_wasted_share": round(wasted / max(n_tx, 1), 4),
+           "hops_per_delivered": round(useful / max(tot["delivered"], 1), 3)}
     out = {"family": a.family, "policy": a.policy, "episodes": a.episodes, "sets": a.set, "born": born,
            "share_of_born_pct": {k: round(100 * v / born, 2) for k, v in sorted(tot.items())},
-           "queued_packets_per_cycle": occ, "rows": rows}
+           "queued_packets_per_cycle": occ, "transmissions": txs, "rows": rows}
     print(json.dumps(out, ensure_ascii=False))
 
 

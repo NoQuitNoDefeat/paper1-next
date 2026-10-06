@@ -337,6 +337,34 @@ def test_route_stagger_and_hop_metrics_conserve_packets():
             assert steps <= n
 
 
+@pytest.mark.parametrize("order,delivered", [("fifo", {1, 2}), ("oldest_first", {0, 1})])
+def test_service_order_oldest_first_sends_the_earliest_born_first(order, delivered):
+    # packet 0 (born first at node 0) reaches queue (1,2) behind packets 1 and 2 born at node 1
+    births = [(0.001, 0, 2), (0.003, 1, 2), (0.004, 1, 2)]
+    env = fixed_env(line_positions(3), births, horizon=5, backend=_lw(service_order=order))
+    env.reset(0)
+    inp = env.step([]).next_input
+    inp = env.step([_link(inp, (0, 1))]).next_input
+    tr = env.step([_link(inp, (1, 2))])
+    assert set(tr.facts.delivered_ids) == delivered
+
+
+@pytest.mark.parametrize("deadline,delivered", [(0.045, 0), (0.05, 1)])
+def test_deadline_drops_late_arrivals_at_the_destination(deadline, delivered):
+    # born 0.001 at node 0, at node 1 by 0.04, reaches node 2 at 0.04 + 1024 B / 1 Mbps (delay ~0.047)
+    env = fixed_env(line_positions(3), [(0.001, 0, 2)], horizon=5, backend=_lw(deadline_s=deadline))
+    env.reset(0)
+    inp = env.step([]).next_input
+    tr = env.step([_link(inp, (0, 1))])
+    assert not tr.facts.terminations  # 0.001 + deadline is after the cycle end 0.04
+    tr = env.step([_link(tr.next_input, (1, 2))])
+    assert len(tr.facts.delivered_ids) == delivered
+    assert len(tr.facts.terminations.get("deadline", [])) == 1 - delivered
+    assert all(d <= deadline for d in tr.facts.delivered_delays)
+    b = env.backend
+    assert b.totals["born"] == b.totals["delivered"] + b.totals["terminated"] + sum(b.in_system())
+
+
 def test_default_backend_counters_are_pinned():
     """Golden counters of the default environment (recorded before the stage-0 options): any change
     of the default path shows up here."""

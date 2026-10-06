@@ -68,7 +68,8 @@ class LightweightBackend(Backend):
                  rehome_overflow: str = "drop"):
         """Stage-0 diagnostic options (defaults = the method's environment):
         ``service_order`` "fifo" | "fewest_hops" (a scheduled link sends its packets with the fewest
-        remaining hops from the receiver first, FIFO within a class); ``room_aware_service`` (a
+        remaining hops from the receiver first, FIFO within a class) | "oldest_first" (earliest
+        born first, i.e. earliest deadline first when all packets share ``deadline_s``); ``room_aware_service`` (a
         packet is sent only if the receiver has room for it at service time: destined to the
         receiver, or room in its next queue there, counting slots claimed this cycle; claimed
         packets are admitted first at the cycle end; a route update after service can still
@@ -79,11 +80,14 @@ class LightweightBackend(Backend):
         one group of destinations are recomputed for all nodes from the same snapshot, so every
         destination tree stays loop-free); ``rehome_overflow`` "drop" | "exceed" (a packet moved
         to its new next-hop queue after a route update enters it even when the queue is full,
-        isolating the loss mechanism of re-homing)."""
+        isolating the loss mechanism of re-homing).  With ``deadline_s`` a packet is dropped
+        ("deadline") at the first cycle end at or after born + deadline_s, wherever it is; a packet
+        reaching its destination later than the deadline within a cycle is dropped there too, so
+        every delivered packet has delay <= deadline_s."""
         if stale_queue_policy not in {"rehome", "keep"}:
             raise ValueError("stale_queue_policy must be 'rehome' or 'keep'")
-        if service_order not in {"fifo", "fewest_hops"}:
-            raise ValueError("service_order must be 'fifo' or 'fewest_hops'")
+        if service_order not in {"fifo", "fewest_hops", "oldest_first"}:
+            raise ValueError("service_order must be 'fifo', 'fewest_hops' or 'oldest_first'")
         if buffer not in {"per_queue", "shared"}:
             raise ValueError("buffer must be 'per_queue' or 'shared'")
         if buffer == "shared" and not node_buffer_packets:
@@ -193,6 +197,8 @@ class LightweightBackend(Backend):
                     rem[d] = r if r >= 0 else self.sc.num_nodes + 1
                 return (rem[d], i)
             order = sorted(order, key=key)
+        elif self.service_order == "oldest_first":
+            order = sorted(order, key=lambda i: (cands[i].born, cands[i].pid))
         picked = []
         for i in order:
             p = cands[i]
@@ -273,6 +279,7 @@ class LightweightBackend(Backend):
         facts_delivered, facts_delays, delivered_hops0 = [], [], []
         delivered_bytes = 0
         staged: list[Packet] = []
+        late_arrivals: list[Packet] = []  # reached the destination after the deadline (dropped there)
 
         # 1. service over the window, actual channel
         exec_gain = self.channel.execution(sc.positions(k), sc.velocities(k), radio, self.rng)
@@ -309,7 +316,10 @@ class LightweightBackend(Backend):
                 t_done += p.size * byte_time
                 served_p[q] += 1
                 served_b[q] += p.size
-                if p.dst == rx:
+                if p.dst == rx and self.deadline_s is not None and t_done - p.born > self.deadline_s + EPS:
+                    p.node = rx
+                    late_arrivals.append(p)
+                elif p.dst == rx:
                     facts_delivered.append(p.pid)
                     facts_delays.append(t_done - p.born)
                     delivered_hops0.append(getattr(p, "hops0", -1))  # -1 for packets of older state
@@ -362,6 +372,8 @@ class LightweightBackend(Backend):
                 if late(p):
                     terminate("deadline", p)
             staged = [p for p in staged if not late(p)]
+            for p in late_arrivals:
+                terminate("deadline", p)
         max_wait = sc.waiting_max_wait
         for w in self.waiting:
             expired = [p for p in w if p.waiting_since + max_wait <= t1 + EPS]

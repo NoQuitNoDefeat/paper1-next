@@ -1,0 +1,251 @@
+{
+ "name": "第 1 阶段 S1：截止时间下哪里损失交付（开发种子 80–111，排空 300）",
+ "out": "results/s1/deadline",
+ "main": "主方法",
+ "eval": {
+  "split": "dev",
+  "seed_offset": 80,
+  "episodes": 32,
+  "drain": 300,
+  "shards": 1
+ },
+ "executors": {
+  "lightweight": null
+ },
+ "scenarios": {
+  "default_D0.5_R0": [
+   "backend.deadline_s=0.5"
+  ],
+  "default_D0.5_R5": [
+   "backend.deadline_s=0.5",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_D0.5_R5e": [
+   "backend.deadline_s=0.5",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_D1_R0": [
+   "backend.deadline_s=1"
+  ],
+  "default_D1_R5": [
+   "backend.deadline_s=1",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_D1_R5e": [
+   "backend.deadline_s=1",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_D2_R0": [
+   "backend.deadline_s=2"
+  ],
+  "default_D2_R5": [
+   "backend.deadline_s=2",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_D2_R5e": [
+   "backend.deadline_s=2",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_D5_R0": [
+   "backend.deadline_s=5"
+  ],
+  "default_D5_R5": [
+   "backend.deadline_s=5",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "default_D5_R5e": [
+   "backend.deadline_s=5",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D0.5_R0": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=0.5"
+  ],
+  "load_high_D0.5_R5": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=0.5",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D0.5_R5e": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=0.5",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D1_R0": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=1"
+  ],
+  "load_high_D1_R5": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=1",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D1_R5e": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=1",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D2_R0": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=2"
+  ],
+  "load_high_D2_R5": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=2",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D2_R5e": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=2",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D5_R0": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=5"
+  ],
+  "load_high_D5_R5": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=5",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "load_high_D5_R5e": [
+   "scenario.flow_rate_pps=[30.0, 45.0]",
+   "backend.deadline_s=5",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D0.5_R0": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=0.5"
+  ],
+  "nodes24_D0.5_R5": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=0.5",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D0.5_R5e": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=0.5",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D1_R0": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=1"
+  ],
+  "nodes24_D1_R5": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=1",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D1_R5e": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=1",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D2_R0": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=2"
+  ],
+  "nodes24_D2_R5": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=2",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D2_R5e": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=2",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D5_R0": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=5"
+  ],
+  "nodes24_D5_R5": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=5",
+   "backend.service_order=\"fewest_hops\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ],
+  "nodes24_D5_R5e": [
+   "scenario.num_nodes=24",
+   "scenario.area_m=367.4",
+   "backend.deadline_s=5",
+   "backend.service_order=\"oldest_first\"",
+   "candidates.require_room=true",
+   "backend.room_aware_service=true"
+  ]
+ },
+ "baseline_config": "configs/protocol_final.toml",
+ "baselines": [
+  "longest_queue",
+  "backpressure"
+ ],
+ "controls": {
+  "lq_lasthop_b1.0": {
+   "policy": "{\"type\": \"lq_lasthop\", \"beta\": 1.0}",
+   "set": []
+  }
+ },
+ "groups": {
+  "主方法": [
+   "results/e6/no_set_summary-s0",
+   "results/e6/no_set_summary-s1",
+   "results/e6/no_set_summary-s2"
+  ]
+ }
+}
