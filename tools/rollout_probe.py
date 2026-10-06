@@ -98,6 +98,32 @@ def _score(env, plan, base, horizon: int, eps: float, mode: str = "window") -> f
     return delivered - eps * delay
 
 
+def _link_features(env, link, rank: int, plan_size: int, deadline: float) -> dict:
+    """Observable features of a planned link (S1d): its queue's packets in service order are not
+    recomputed; all packets of the queue are summarised."""
+    be, sc = env.backend, env.backend.sc
+    tx, rx = int(link[0]), int(link[1])
+    now = be.cycle * sc.cycle_length
+    q = be.queues[be.qindex[(tx, rx)]]
+    rem = [1 if p.dst == rx else 1 + max(be._route_len(rx, p.dst), 0) for p in q]
+    age = [now - p.born for p in q]
+    slack = [deadline - a for a in age]
+    rx_q = sum(len(be.queues[i]) for i in be.node_queues[rx])
+    pos = sc.positions(be.cycle)
+    nh = [int(be.next_hop[rx, p.dst]) for p in q if p.dst != rx]
+    room = [int(be.qcap[be.qindex[(rx, h)]]) - len(be.queues[be.qindex[(rx, h)]]) for h in set(nh) if h >= 0]
+    n = max(len(q), 1)
+    return {"rank": rank, "plan_size": plan_size, "n_pk": len(q),
+            "share_last_hop": sum(r == 1 for r in rem) / n, "rem_hops_mean": float(np.mean(rem)) if rem else 0.0,
+            "rem_hops_max": max(rem, default=0), "age_mean": float(np.mean(age)) if age else 0.0,
+            "age_max": max(age, default=0.0), "slack_min": min(slack, default=deadline),
+            "share_hopeless": sum(sl < r * sc.cycle_length for sl, r in zip(slack, rem)) / n,
+            "share_tight": sum(sl < r * 0.1 for sl, r in zip(slack, rem)) / n,
+            "share_at_source": sum(p.src == tx for p in q) / n, "rx_queued": rx_q,
+            "rx_room_min": min(room, default=64), "dist_m": float(np.linalg.norm(pos[tx] - pos[rx])),
+            "net_queued": sum(len(x) for x in be.queues), "cycle": int(be.cycle)}
+
+
 def episode(args) -> dict:
     a, idx, seed = args
     cfg = _cfg(a)
@@ -109,6 +135,7 @@ def episode(args) -> dict:
         env = build_env(cfg, run_id=f"rp{idx}", build_graph=False, scenario_override=sc)
         env.reset(seed, episode=idx)
         chosen = collections.Counter()
+        decisions: list[dict] = []
         while True:
             if mode == "base":
                 plan = tuple(base.act([env.current], mode="greedy")[0].actions)
@@ -127,6 +154,18 @@ def episode(args) -> dict:
                     best = max(scores, key=lambda k: (scores[k], k == "base"))
                     plan = cands[best]
                     chosen[best] += 1
+                    if a.log_decisions:
+                        by_plan = {cands[k]: scores[k] for k in cands}
+                        b, inp = cands["base"], env.current
+                        links = [tuple(int(x) for x in inp.problem.links[i]) for i in b]
+                        row = {"best": best, "plan_size": len(b),
+                               "gain1": by_plan.get(b[:-1], float("nan")) - by_plan[b] if len(b) >= 1 else float("nan"),
+                               "gain2": by_plan.get(b[:-2], float("nan")) - by_plan[b] if len(b) >= 2 else float("nan")}
+                        if links:
+                            row["last"] = _link_features(env, links[-1], 1, len(b), a.deadline)
+                        if len(links) >= 2:
+                            row["second"] = _link_features(env, links[-2], 2, len(b), a.deadline)
+                        decisions.append(row)
             tr = env.step(list(plan))
             if tr.end is not EndType.CONTINUE:
                 break
@@ -134,6 +173,8 @@ def episode(args) -> dict:
         out[mode] = {k: s[k] for k in ("delivery_ratio", "e2e_delay_mean_s", "e2e_delay_p95_s", "born")}
         if mode == "rollout":
             out["chosen"] = dict(chosen)
+            if a.log_decisions:
+                out["decisions"] = decisions
     return out
 
 
@@ -150,6 +191,7 @@ def main() -> None:
     ap.add_argument("--eps", type=float, default=1e-3, help="weight of delay (s) against one delivery")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--score", default="window", choices=["window", "cohort"])
+    ap.add_argument("--log-decisions", action="store_true", help="S1d: features of the base plan's last links")
     ap.add_argument("--set", action="append", default=[])
     a = ap.parse_args()
     cycle = float(load_config(str(ROOT / "configs/protocol_final.toml"))["scenario"]["cycle_length"])
